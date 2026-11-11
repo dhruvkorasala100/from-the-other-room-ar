@@ -3,7 +3,7 @@
 Phone-browser AR for the white paper pop-up house (Robert Sabuda box-house template).
 Point a phone at the printed placement mat and the overlay sits on the real card.
 
-**Stage 1 (now):** static red overlay + on-screen calibration panel.
+**Stage 1 (now):** visible scan sequence (pattern → card → walls → roof → "House identified") that settles into a static red overlay, plus an "Adjust fit" calibration drawer.
 **Stage 2 (next):** red wash → black acrylic marks across the ground → streak climbs the wall → white acrylic covers the house.
 
 ## Use
@@ -12,7 +12,7 @@ Point a phone at the printed placement mat and the overlay sits on the real card
 3. Open the site on the phone, allow the camera, point at the image.
 4. Calibrate with the panel, tap **Copy values**, paste them into `ALIGN_DEFAULT` in `index.html`.
 
-URL options: `?reset` ignores saved values · `?fov=63` sets camera FOV · `?smooth=steady|balanced|responsive`.
+URL options: `?reset` ignores saved values · `?scanspeed=0.5` slows the scan · `?fov=63` sets camera FOV · `?smooth=steady|balanced|responsive`.
 
 ## Files
 - `index.html` – the AR page. All alignment values are in `ALIGN_DEFAULT` at the top.
