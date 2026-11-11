@@ -1,10 +1,20 @@
 # From the Other Room · phone AR
 
 Phone-browser AR for the white paper pop-up house (Robert Sabuda box-house template).
-Point a phone at the printed placement mat and the overlay sits on the real card.
 
-**Stage 1 (now):** visible scan sequence (pattern → card → walls → roof → "House identified") that settles into a static red overlay, plus an "Adjust fit" calibration drawer.
-**Stage 2 (next):** red wash → black acrylic marks across the ground → streak climbs the wall → white acrylic covers the house.
+## Main version: artwork base (`index.html`)
+1. Print `artwork-base.pdf` on US Letter at **100% / Actual size**.
+2. Open the card flat on the **back half** of the print, inside the white corner ticks, fold on the tick at the card's front edge, house front corner toward you. Tape the card's two outer edges.
+3. Open the site on the phone, allow the camera, point at the artwork in front of the house.
+
+Sequence: scan (artwork → card → walls → roof) → the whole house turns red → the printed black line carries on across the card and up the long wall to the roof while the artwork spreads over the house → white covers the house, card and base.
+"Adjust fit" switches to a plain red alignment overlay. URL options: `?reset` · `?fov=63` · `?speed=0.5` · `?smooth=steady|balanced|responsive`.
+
+The artwork (IMG_6944) is printed rotated 180° so the red circle sits just in front of the card. The phone tracks the visible front strip (page x 8–208 mm, y 118–268 mm).
+
+## Other pages
+- `mat.html` + `placement-mat.pdf`: earlier test with a generated pattern and a static red overlay.
+- `try.html`: no printing; recolours the white paper in the live camera image (no 3D tracking).
 
 ## Quick try, no printing: `try.html`
 Open `/try.html`, point at the house, tap Play. It recolours the white paper in the live camera image (room-light corrected, keeps only the paper you point at, fills shaded walls framed by paper). No 3D tracking, so marks follow the screen, not a specific wall.

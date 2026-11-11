@@ -13,7 +13,7 @@
    ---------------------------------------------------------------------
    moveX         mm   + slides the overlay to the RIGHT
    moveY         mm   + slides the overlay AWAY from you (toward the card's back edge)
-   lift          mm   + raises the whole overlay off the mat
+   lift          mm   + raises the whole overlay off the base
    turn          deg  + turns it counter-clockwise, seen from above
    size          %    100 = template printed at 100% ("Actual size")
    heightStretch %    stretches only the vertical. Fixes a roof that slides
@@ -28,7 +28,7 @@ const ALIGN_DEFAULT = {
   moveX: 0, moveY: 0, lift: 0, turn: 0,
   size: 100, heightStretch: 100, roofPitch: 33.7, cameraFov: 63
 };
-const STORE_KEY = 'fotr-align-v1';
+const STORE_KEY = 'fotr-align-art-v1';
 const ALIGN = Object.assign({}, ALIGN_DEFAULT);
 (() => {
   const q = new URLSearchParams(location.search);
@@ -37,21 +37,30 @@ const ALIGN = Object.assign({}, ALIGN_DEFAULT);
   window.MINDAR_FOVY = ALIGN.cameraFov;   // read by the patched MindAR controller at start
 })();
 
-/* Physical layout in mm, from the Sabuda template + placement mat v1. */
+/* Physical layout in mm: Sabuda template + artwork base (letter, portrait, artwork rotated 180°).
+   Page coordinates: x from the left edge, y from the top (back) edge. */
 const LAYOUT = {
-  target: { w: 160, h: 80 },  // printed tracking image
-  cornerAway: 78.7,           // house front corner: distance from image centre toward the card
-  card: { w: 190.5, d: 104.8, cornerFromFront: 31.7 },
+  page: { w: 215.9, h: 279.4 },
+  target: { x: 8, y: 118, w: 200, h: 150 },          // the visible front strip the phone tracks
+  card: { w: 190.5, d: 104.8, x: 12.7, y: 8.0, cornerFromFront: 31.7 },
+  houseCorner: [107.95, 81.1],                        // front corner of the house, on the fold
+  line: { cardEdge: [119.5, 112.8], front: [99.0, 205.0] },   // the printed black line
   house: { long: 50.8, gable: 38.1, eave: 38.1, ridge: 50.8 },
   roof: { ridgeLen: 57.1, slope: 34.9 }
 };
 
-/* Scan timeline in seconds after the pattern is found. */
-const SCAN = { pattern: [0, 0.8], card: [0.8, 1.9], rise: [1.9, 4.4], settle: [4.4, 5.2], top: 53 };
-const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspeed')) || 1;  // ?scanspeed=0.5 plays it slower
+/* Timeline in seconds after the base is found. */
+const SEQ = {
+  pattern: [0, 0.6], card: [0.6, 1.4], rise: [1.4, 3.2], settle: [3.2, 3.8],   // scan
+  red: [4.6, 7.6],                         // the whole house turns red
+  streak: [7.8, 10.8], art: [9.2, 13.2],   // the printed line climbs the house, the base spreads over it
+  whiteHouse: [14.6, 17.6], whiteFloor: [15.0, 19.2],   // everything turns white
+  end: 20.2, top: 53
+};
+const SPEED = parseFloat(new URLSearchParams(location.search).get('speed')) || 1;   // ?speed=0.5 plays slower
 </script>
 <style>
-  :root { --panel: rgba(14,14,16,.82); --line: rgba(255,255,255,.16); --ink: #fff; --dim: rgba(255,255,255,.66); --scan: #3de0ff; --red: #e0302f; --ok: #3ccf7a; }
+  :root { --panel: rgba(14,14,16,.82); --line: rgba(255,255,255,.16); --ink: #fff; --dim: rgba(255,255,255,.66); --scan: #3de0ff; --red: #c4241f; --ok: #3ccf7a; }
   html { background: #000; }
   /* body must stay transparent: MindAR puts the camera <video> behind the scene at z-index -2 */
   html, body { margin: 0; height: 100%; overflow: hidden; font: 15px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ink); -webkit-user-select: none; user-select: none; touch-action: manipulation; }
@@ -59,15 +68,15 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
   button { font: inherit; color: var(--ink); background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 10px; padding: 8px 11px; white-space: nowrap; }
   button:active { background: rgba(255,255,255,.22); }
 
-  /* top: status + checklist */
   #top { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 0; right: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
   #status { background: var(--panel); padding: 8px 15px 8px 12px; border-radius: 99px; font-size: 14px; font-weight: 600; display: flex; gap: 8px; align-items: center; transition: background .3s; }
   #status i { width: 10px; height: 10px; border-radius: 50%; background: #f5b400; display: block; }
   #status.scan i { background: var(--scan); animation: blink .7s infinite; }
+  #status.paint i { background: var(--red); animation: blink 1.2s infinite; }
   #status.ok { background: rgba(24,120,64,.9); }
   #status.ok i { background: #fff; }
   @keyframes blink { 50% { opacity: .25; } }
-  #steps { display: flex; gap: 6px; background: var(--panel); padding: 6px; border-radius: 12px; opacity: 0; transition: opacity .3s; }
+  #steps { display: flex; gap: 6px; background: var(--panel); padding: 6px; border-radius: 12px; opacity: 0; transition: opacity .4s; }
   #steps.show { opacity: 1; }
   .step { display: flex; align-items: center; gap: 5px; font-size: 12.5px; padding: 4px 8px; border-radius: 8px; color: var(--dim); }
   .step b { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid currentColor; box-sizing: border-box; display: grid; place-items: center; font-size: 10px; }
@@ -78,10 +87,9 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
   .step.done b::after { content: "✓"; color: #fff; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* search viewfinder */
   #finder { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; pointer-events: none; transition: opacity .35s; }
   #finder.hide { opacity: 0; }
-  .frame { position: relative; width: min(78vw, 360px); aspect-ratio: 2 / 1; }
+  .frame { position: relative; width: min(74vw, 340px); aspect-ratio: 4 / 3; }
   .frame span { position: absolute; width: 34px; height: 34px; border: 3px solid #fff; }
   .frame span:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; border-radius: 10px 0 0 0; }
   .frame span:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; border-radius: 0 10px 0 0; }
@@ -89,24 +97,23 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
   .frame span:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; border-radius: 0 0 10px 0; }
   .frame em { position: absolute; left: 6px; right: 6px; height: 2px; top: 0; background: var(--scan); box-shadow: 0 0 14px 3px rgba(61,224,255,.7); animation: sweep 1.8s ease-in-out infinite alternate; }
   @keyframes sweep { to { top: calc(100% - 2px); } }
-  .finderText { position: absolute; top: calc(50% + min(20vw, 92px) + 18px); text-align: center; width: 100%; padding: 0 24px; box-sizing: border-box; }
+  .finderText { position: absolute; top: calc(50% + min(28vw, 128px) + 18px); text-align: center; width: 100%; padding: 0 24px; box-sizing: border-box; }
   .finderText b { display: block; font-size: 17px; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
   .finderText span { color: var(--dim); font-size: 13.5px; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
 
-  /* floating part labels */
   .tag { position: fixed; z-index: 15; left: 0; top: 0; transform: translate(-50%, -100%); pointer-events: none; opacity: 0; transition: opacity .25s; }
   .tag.show { opacity: 1; }
   .tag div { background: rgba(8,30,38,.85); color: var(--scan); border: 1px solid rgba(61,224,255,.6); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
   .tag.done div { color: #fff; border-color: rgba(255,255,255,.5); background: rgba(20,20,20,.75); }
   .tag i { display: block; width: 1px; height: 14px; margin: 0 auto; background: currentColor; color: var(--scan); }
 
-  /* bottom buttons + calibration drawer */
   #bar { position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 21; display: flex; justify-content: space-between; }
   #bar button { background: var(--panel); border-radius: 99px; padding: 9px 15px; font-size: 14px; }
   #panel { position: fixed; left: 0; right: 0; bottom: 0; z-index: 22; background: var(--panel); padding: 12px 16px max(14px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); transform: translateY(105%); transition: transform .25s; }
   #panel.open { transform: none; }
   .row { display: flex; gap: 6px; align-items: center; }
   .head { justify-content: space-between; margin-bottom: 8px; font-weight: 600; }
+  .head small { display: block; font-weight: 400; color: var(--dim); font-size: 12px; }
   .params { overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; }
   .params::-webkit-scrollbar { display: none; }
   .params button.sel { background: var(--red); border-color: var(--red); }
@@ -117,7 +124,6 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
   .readout span { color: var(--dim); font-size: 12px; }
   .tools { flex-wrap: wrap; }
   .tools button { font-size: 13px; padding: 7px 10px; }
-  .tools button.on { border-color: var(--ink); }
   #copyBox { display: none; width: 100%; box-sizing: border-box; margin-top: 8px; height: 64px; background: #000; color: #fff; border: 1px solid var(--line); border-radius: 8px; font: 12px ui-monospace, Menlo, monospace; padding: 6px; }
   #copyBox.show { display: block; }
   #toast { position: fixed; left: 50%; bottom: 50%; transform: translateX(-50%); background: var(--panel); padding: 9px 14px; border-radius: 10px; z-index: 30; opacity: 0; transition: opacity .2s; pointer-events: none; font-size: 14px; }
@@ -128,7 +134,7 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
 <div id="top">
   <div id="status"><i></i><span id="statusText">Starting camera…</span></div>
   <div id="steps">
-    <div class="step" data-s="pattern"><b></b>Pattern</div>
+    <div class="step" data-s="pattern"><b></b>Base</div>
     <div class="step" data-s="card"><b></b>Card</div>
     <div class="step" data-s="walls"><b></b>Walls</div>
     <div class="step" data-s="roof"><b></b>Roof</div>
@@ -137,18 +143,18 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
 
 <div id="finder">
   <div class="frame"><span></span><span></span><span></span><span></span><em></em></div>
-  <div class="finderText"><b>Point at the printed pattern</b><span>Hold the phone 25–40 cm away so the whole pattern and the house are on screen</span></div>
+  <div class="finderText"><b>Point at the artwork in front of the house</b><span>Hold the phone 30–40 cm away so the artwork and the house are both on screen</span></div>
 </div>
 
-<div class="tag" id="tag-pattern"><div>Pattern</div><i></i></div>
+<div class="tag" id="tag-pattern"><div>Artwork</div><i></i></div>
 <div class="tag" id="tag-card"><div>Card</div><i></i></div>
 <div class="tag" id="tag-wall"><div>Walls</div><i></i></div>
 <div class="tag" id="tag-roof"><div>Roof</div><i></i></div>
 
-<div id="bar"><button id="rescan">↻ Rescan</button><button id="openPanel">Adjust fit</button></div>
+<div id="bar"><button id="replay">↻ Replay</button><button id="openPanel">Adjust fit</button></div>
 
 <div id="panel">
-  <div class="row head"><span>Adjust fit</span><button id="closePanel">Done</button></div>
+  <div class="row head"><span>Adjust fit<small>Line the red up with your paper house</small></span><button id="closePanel">Done</button></div>
   <div class="row params" id="params"></div>
   <div class="row nudge">
     <button class="big" id="minus" aria-label="Decrease">−</button>
@@ -158,8 +164,6 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
   <div class="row tools">
     <button id="step">Step: fine</button>
     <button id="fill">Fill 55%</button>
-    <button id="edges" class="on">Edges</button>
-    <button id="outline" class="on">Card outline</button>
     <button id="copy">Copy values</button>
     <button id="reset">Reset</button>
     <button id="reload" style="display:none;border-color:#e0302f">Reload to apply FOV</button>
@@ -169,7 +173,7 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
 <div id="toast"></div>
 
 <a-scene id="scene"
-  mindar-image="imageTargetSrc: ./targets/mat-v1.mind; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 6; warmupTolerance: 3; uiScanning: no; uiLoading: yes; uiError: yes"
+  mindar-image="imageTargetSrc: ./targets/art-v1.mind; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 8; warmupTolerance: 3; uiScanning: no; uiLoading: yes; uiError: yes"
   color-space="sRGB" renderer="colorManagement: true; antialias: true; alpha: true"
   vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
   <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: none"></a-camera>
@@ -179,48 +183,35 @@ const SCAN_SPEED = parseFloat(new URLSearchParams(location.search).get('scanspee
 </a-scene>
 
 <script>
-/* Smoothing (one-euro filter). minCF lower = steadier when still; beta higher = less lag when moving.
-   Override with ?smooth=steady|balanced|responsive. Applied before AR starts. */
 const SMOOTH = { steady: [0.0001, 0.001], balanced: [0.0001, 10], responsive: [0.001, 1000] };
 const [minCF, beta] = SMOOTH[new URLSearchParams(location.search).get('smooth')] || SMOOTH.balanced;
 document.getElementById('scene').setAttribute('mindar-image', { filterMinCF: minCF, filterBeta: beta });
 
 const THREE = AFRAME.THREE;
-const VIEW = { fill: 0.55, edges: true, outline: true };
-const RED = new THREE.Color('#d6231f'), CYAN = new THREE.Color('#3de0ff'), WHITE = new THREE.Color('#ffffff');
+const VIEW = { calib: false, fill: 0.55 };
+const CYAN = new THREE.Color('#3de0ff'), WHITE = new THREE.Color('#ffffff');
 const deg = d => d * Math.PI / 180;
 const clamp01 = x => Math.min(1, Math.max(0, x));
 const ease = x => x * x * (3 - 2 * x);
 const prog = ([a, b], t) => clamp01((t - a) / (b - a));
 const $ = id => document.getElementById(id);
 
+/* place frame (mm): origin = house front corner on the fold, X right, Y up, Z toward the viewer */
+const toPlace = ([px, py]) => [px - LAYOUT.houseCorner[0], py - LAYOUT.houseCorner[1]];
+
 function shapeFrom(pts) { const s = new THREE.Shape(); pts.forEach((p, i) => i ? s.lineTo(p[0], p[1]) : s.moveTo(p[0], p[1])); s.closePath(); return s; }
-
-/* Roof face outline traced from the template's vector path.
-   x runs along the ridge (centred), y runs down the slope (0 = ridge, negative = toward the eave). */
 function roofShape() {
-  const { ridgeLen: L, slope: S } = LAYOUT.roof, h = L / 2;
-  const s = new THREE.Shape();
-  s.moveTo(-h, 0); s.lineTo(h, 0);
-  s.bezierCurveTo(h, 0, h + 3.4, -S, 13.55, -S);
-  s.lineTo(-12.55, -S);
-  s.bezierCurveTo(-h - 3.6, -S, -h, 0, -h, 0);
-  return s;
+  const { ridgeLen: L, slope: S } = LAYOUT.roof, h = L / 2, s = new THREE.Shape();
+  s.moveTo(-h, 0); s.lineTo(h, 0); s.bezierCurveTo(h, 0, h + 3.4, -S, 13.55, -S);
+  s.lineTo(-12.55, -S); s.bezierCurveTo(-h - 3.6, -S, -h, 0, -h, 0); return s;
 }
-
-/* A rectangle drawn as one continuous path, so it can "draw itself" with setDrawRange. */
 function pathLine(corners, perSide, mat) {
   const pts = [];
-  for (let i = 0; i < corners.length; i++) {
-    const a = corners[i], b = corners[(i + 1) % corners.length];
-    for (let k = 0; k < perSide; k++) pts.push(new THREE.Vector3().lerpVectors(a, b, k / perSide));
-  }
+  for (let i = 0; i < corners.length; i++) { const a = corners[i], b = corners[(i + 1) % corners.length];
+    for (let k = 0; k < perSide; k++) pts.push(new THREE.Vector3().lerpVectors(a, b, k / perSide)); }
   pts.push(corners[0].clone());
-  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
-  line.userData.n = pts.length; return line;
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat); line.userData.n = pts.length; return line;
 }
-
-/* Glowing grid texture for the rising scan plane. */
 function scanTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
   g.fillStyle = 'rgba(61,224,255,0.16)'; g.fillRect(0, 0, 256, 256);
@@ -230,78 +221,152 @@ function scanTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
+/* ---------- paint shaders (colours stay in sRGB end to end) ---------- */
+const NOISE = `
+float h1(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
+  return mix(mix(h1(i), h1(i+vec2(1,0)), f.x), mix(h1(i+vec2(0,1)), h1(i+vec2(1,1)), f.x), f.y); }
+float fbm(vec2 p){ float a = .5, s = 0.; for (int i = 0; i < 5; i++) { s += a*vn(p); p *= 2.03; a *= .5; } return s; }`;
+const VERT = `
+#include <clipping_planes_pars_vertex>
+uniform mat4 uPlaceInv;
+varying vec3 vP; varying vec3 vN;
+void main(){
+  vec4 w = modelMatrix * vec4(position, 1.);
+  vP = (uPlaceInv * w).xyz;
+  vN = normalize((uPlaceInv * modelMatrix * vec4(normal, 0.)).xyz);
+  vec4 mvPosition = viewMatrix * w;
+  #include <clipping_planes_vertex>
+  gl_Position = projectionMatrix * mvPosition;
+}`;
+const HOUSE_FRAG = `
+#include <clipping_planes_pars_fragment>
+uniform sampler2D uArt, uRed;
+uniform float uScan, uRedP, uArtP, uWhiteP, uCalib, uCalibFill;
+uniform vec4 uPage;   // corner x, corner y, page w, page h (mm)
+varying vec3 vP; varying vec3 vN;
+${NOISE}
+void main(){
+  #include <clipping_planes_fragment>
+  float h = vP.y;
+  vec3 N = normalize(vN);
+  // surface coordinates: along the wall and up it, or across the roof
+  vec2 tng = normalize(vec2(-N.z, N.x) + 1e-4);
+  vec2 sc = abs(N.y) > .45 ? vP.xz : vec2(dot(vP.xz, tng), h);
+  float n1 = fbm(sc * .09 + vec2(0., h * .03));
+  float n2 = fbm(sc * .06 + 5.);
+  float light = .74 + .3 * max(dot(N, normalize(vec3(-.35, .85, .45))), 0.);
+  // red: the whole house, painted with the grain of the red in the artwork
+  vec3 red = texture2D(uRed, sc * .022).rgb * 1.35 * light;
+  // the base: the artwork around the red circle and the line, folded up the walls
+  vec2 auv = vec2((vP.x * 1.5 + uPage.x - 5.) / uPage.z, 1. - (vP.z * 1.5 + uPage.y + 70. + h * 1.4) / uPage.w);
+  vec3 art = texture2D(uArt, auv).rgb * (.78 + .28 * light);
+  vec3 white = vec3(.95, .945, .925) * (.9 + .1 * fbm(sc * .3)) * (.88 + .14 * light);
+  float rf = mix(-8., 64., uRedP),  rm = smoothstep(rf, rf - 7., h + 8. * (n1 - .5));
+  float af = mix(-12., 68., uArtP), am = smoothstep(af, af - 10., h + 14. * (n2 - .5));
+  float wf = mix(-10., 66., uWhiteP), wm = smoothstep(wf, wf - 8., h + 10. * (n1 - .5));
+  vec3 c = red; float a = rm;
+  c = mix(c, art, am);   a = max(a, am);
+  c = mix(c, white, wm); a = max(a, wm);
+  vec3 outC = mix(vec3(.24, .88, 1.), c, a); float outA = max(.3 * uScan, a);
+  if (uCalib > .5) { outC = vec3(.84, .14, .12); outA = uCalibFill; }
+  gl_FragColor = vec4(outC, outA);
+}`;
+const FLOOR_FRAG = `
+#include <clipping_planes_pars_fragment>
+uniform float uWhiteFloorP, uCalib;
+uniform vec2 uCenter;
+varying vec3 vP; varying vec3 vN;
+${NOISE}
+void main(){
+  #include <clipping_planes_fragment>
+  float d = length(vP.xz - uCenter);
+  float n = fbm(vP.xz * .03);
+  float f = mix(-30., 290., uWhiteFloorP);
+  float wm = smoothstep(f, f - 30., d + 44. * (n - .5));
+  vec3 white = vec3(.95, .945, .925) * (.87 + .13 * fbm(vP.xz * .22 + 3.));
+  gl_FragColor = vec4(white, uCalib > .5 ? 0. : wm);
+}`;
+
 AFRAME.registerComponent('house-overlay', {
   init() {
-    const H = LAYOUT.house;
+    const H = LAYOUT.house, T = LAYOUT.target;
+    const loader = new THREE.TextureLoader();
+    const artTex = loader.load('./textures/art.jpg'), redTex = loader.load('./textures/red.jpg');
+    redTex.wrapS = redTex.wrapT = THREE.MirroredRepeatWrapping;
+    artTex.wrapS = artTex.wrapT = THREE.ClampToEdgeWrapping;
+
     this.clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
-    this.fillMat = new THREE.MeshBasicMaterial({ color: CYAN.clone(), transparent: true, opacity: 0.3, depthWrite: false, side: THREE.FrontSide, clippingPlanes: [this.clip] });
+    this.placeInv = new THREE.Matrix4();
+    this.U = {
+      uPlaceInv: { value: this.placeInv }, uArt: { value: artTex }, uRed: { value: redTex },
+      uScan: { value: 1 }, uRedP: { value: 0 }, uArtP: { value: 0 }, uWhiteP: { value: 0 }, uWhiteFloorP: { value: 0 },
+      uCalib: { value: 0 }, uCalibFill: { value: VIEW.fill },
+      uPage: { value: new THREE.Vector4(LAYOUT.houseCorner[0], LAYOUT.houseCorner[1], LAYOUT.page.w, LAYOUT.page.h) },
+      uCenter: { value: new THREE.Vector2(H.long * .3536 - H.gable * .3536, -(H.long * .3536 + H.gable * .3536)) }
+    };
+    this.paintMat = new THREE.ShaderMaterial({ uniforms: this.U, vertexShader: VERT, fragmentShader: HOUSE_FRAG, transparent: true, depthWrite: false, side: THREE.FrontSide, clipping: true, clippingPlanes: [this.clip] });
+    this.floorMat = new THREE.ShaderMaterial({ uniforms: this.U, vertexShader: VERT, fragmentShader: FLOOR_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide, clipping: true });
     this.occMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: [this.clip] });
     this.edgeMat = new THREE.LineBasicMaterial({ color: CYAN.clone(), transparent: true, opacity: 1, clippingPlanes: [this.clip] });
     this.cardMat = new THREE.LineBasicMaterial({ color: CYAN.clone(), transparent: true, opacity: .95 });
     this.patMat = new THREE.MeshBasicMaterial({ color: CYAN.clone(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
     this.patLineMat = new THREE.LineBasicMaterial({ color: CYAN.clone(), transparent: true, opacity: 0 });
+    this.streakMat = new THREE.MeshBasicMaterial({ color: 0x0d0d0f, transparent: true, opacity: .95, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
 
-    // root: MindAR units (1 = image width) -> mm, and image plane -> "Y is up off the mat, Z toward the viewer"
+    // root: MindAR units (1 = target width) -> mm; image plane -> Y up, Z toward the viewer; origin = target centre
     this.root = new THREE.Group();
-    this.root.scale.setScalar(1 / LAYOUT.target.w);
+    this.root.scale.setScalar(1 / T.w);
     this.root.rotation.x = Math.PI / 2;
-
-    // the printed pattern itself (fixed to the image, ignores alignment)
-    const T = LAYOUT.target, V3 = (x, z) => new THREE.Vector3(x, 0.3, z);
+    const V3 = (x, z) => new THREE.Vector3(x, 0.3, z);
     const patPlane = new THREE.Mesh(new THREE.PlaneGeometry(T.w, T.h), this.patMat); patPlane.rotation.x = -Math.PI / 2; patPlane.position.y = 0.2;
-    this.patLine = pathLine([V3(-T.w / 2, T.h / 2), V3(T.w / 2, T.h / 2), V3(T.w / 2, -T.h / 2), V3(-T.w / 2, -T.h / 2)], 1, this.patLineMat);
+    this.patLine = pathLine([V3(-T.w / 2, -T.h / 2), V3(T.w / 2, -T.h / 2), V3(T.w / 2, T.h / 2), V3(-T.w / 2, T.h / 2)], 1, this.patLineMat);
     this.root.add(patPlane, this.patLine);
 
-    this.place = new THREE.Group();        // user alignment lives here; origin = house front corner on the fold
-    this.root.add(this.place);
-    this.house = new THREE.Group();         // house axes: X' along the long wall, Z' along the gable wall
-    this.house.rotation.y = Math.PI / 4;    // template: both walls leave the fold at 45°
-    this.place.add(this.house);
+    this.place = new THREE.Group(); this.root.add(this.place);
+    this.house = new THREE.Group(); this.house.rotation.y = Math.PI / 4; this.place.add(this.house);
 
     const add = (geo, pos, rotY) => {
       const g = new THREE.Group(); g.position.set(...pos); if (rotY) g.rotation.y = rotY;
       const occ = new THREE.Mesh(geo, this.occMat); occ.renderOrder = 0;
-      const fill = new THREE.Mesh(geo, this.fillMat); fill.renderOrder = 1;
-      const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), this.edgeMat); edge.renderOrder = 2;
+      const fill = new THREE.Mesh(geo, this.paintMat); fill.renderOrder = 2;
+      const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), this.edgeMat); edge.renderOrder = 3;
       g.add(occ, fill, edge); return g;
     };
     const longWall = new THREE.ShapeGeometry(shapeFrom([[0, 0], [H.long, 0], [H.long, H.eave], [0, H.eave]]));
     const gA = new THREE.ShapeGeometry(shapeFrom([[-H.gable, 0], [0, 0], [0, H.eave], [-H.gable / 2, H.ridge], [-H.gable, H.eave]]));
     const gB = new THREE.ShapeGeometry(shapeFrom([[0, 0], [H.gable, 0], [H.gable, H.eave], [H.gable / 2, H.ridge], [0, H.eave]]));
-    this.house.add(
-      add(longWall, [0, 0, 0]),                              // front-right long wall
-      add(longWall, [H.long, 0, -H.gable], Math.PI),        // back long wall
-      add(gA, [0, 0, 0], -Math.PI / 2),                      // front-left gable end
-      add(gB, [H.long, 0, 0], Math.PI / 2)                   // back gable end
-    );
-
-    // roof: two faces hinged on the ridge
+    this.house.add(add(longWall, [0, 0, 0]), add(longWall, [H.long, 0, -H.gable], Math.PI), add(gA, [0, 0, 0], -Math.PI / 2), add(gB, [H.long, 0, 0], Math.PI / 2));
     const rGeo = new THREE.ShapeGeometry(roofShape(), 24);
-    this.ridge = new THREE.Group();
-    this.ridge.position.set(H.long / 2, H.ridge + 0.3, -H.gable / 2);
-    this.roofA = add(rGeo, [0, 0, 0]);
-    this.roofB = add(rGeo, [0, 0, 0]);
+    this.ridge = new THREE.Group(); this.ridge.position.set(H.long / 2, H.ridge + 0.3, -H.gable / 2);
+    this.roofA = add(rGeo, [0, 0, 0]); this.roofB = add(rGeo, [0, 0, 0]);
     const flip = new THREE.Group(); flip.rotation.y = Math.PI; flip.add(this.roofB);
-    this.ridge.add(this.roofA, flip);
-    this.house.add(this.ridge);
+    this.ridge.add(this.roofA, flip); this.house.add(this.ridge);
 
-    // rising scan plane (horizontal, slightly larger than the roof)
+    // scan plane
     this.scanMat = new THREE.MeshBasicMaterial({ map: scanTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     this.scanPlane = new THREE.Mesh(new THREE.PlaneGeometry(H.long + 22, H.gable + 34), this.scanMat);
-    this.scanPlane.rotation.x = -Math.PI / 2; this.scanPlane.renderOrder = 4;
-    this.house.add(this.scanPlane);
+    this.scanPlane.rotation.x = -Math.PI / 2; this.scanPlane.renderOrder = 6; this.house.add(this.scanPlane);
 
-    // flat card outline (draws itself) + fold line
+    // card outline + fold
     const C = LAYOUT.card, f = C.cornerFromFront, x = C.w / 2, y = 0.2, P = (a, b) => new THREE.Vector3(a, y, b);
     this.cardLine = pathLine([P(-x, f), P(x, f), P(x, f - C.d), P(-x, f - C.d)], 40, this.cardMat);
     this.fold = new THREE.Line(new THREE.BufferGeometry().setFromPoints([P(0, f), P(0, f - C.d)]), this.cardMat);
-    this.cardLine.renderOrder = this.fold.renderOrder = 3;
-    this.place.add(this.cardLine, this.fold);
+    this.cardLine.renderOrder = this.fold.renderOrder = 4; this.place.add(this.cardLine, this.fold);
 
-    // label anchor points (place frame / house frame)
+    // white-out plane over the whole page (card included)
+    const pg = LAYOUT.page, [cx0, cz0] = toPlace([0, 0]);
+    this.floor = new THREE.Mesh(new THREE.PlaneGeometry(pg.w, pg.h), this.floorMat);
+    this.floor.rotation.x = -Math.PI / 2; this.floor.position.set(cx0 + pg.w / 2, 0.6, cz0 + pg.h / 2); this.floor.renderOrder = 5;
+    this.place.add(this.floor);
+
+    // the printed line, continued in paint across the card and up the house
+    this.streak = new THREE.Mesh(new THREE.BufferGeometry(), this.streakMat); this.streak.renderOrder = 7;
+    this.place.add(this.streak);
+
     this.labelPts = {
-      pattern: [this.root, new THREE.Vector3(0, 0, -T.h / 2 + 6)],
-      card: [this.place, new THREE.Vector3(-x + 26, 0, f - 6)],
+      pattern: [this.root, new THREE.Vector3(0, 0, -T.h / 2 + 10)],
+      card: [this.place, new THREE.Vector3(-x + 26, 0, f - 8)],
       wall: [this.house, new THREE.Vector3(0, H.eave * 0.35, 0)],
       roof: [this.house, new THREE.Vector3(H.long / 2, H.ridge + 6, -H.gable / 2)]
     };
@@ -310,88 +375,135 @@ AFRAME.registerComponent('house-overlay', {
 
     this.el.object3D.add(this.root);
     window.overlay = this;
+    this.seq = { t0: null, offset: 0, lostAt: null };
     this.apply();
-    this.seq = { t0: null, done: false, speed: 1, lostAt: null };
+  },
+
+  /* ribbon for the streak: printed line direction carried onto the floor, up the long wall, over the roof */
+  buildStreak() {
+    const H = LAYOUT.house, p = deg(ALIGN.roofPitch), c = Math.SQRT1_2;
+    const S = toPlace(LAYOUT.line.cardEdge), F = toPlace(LAYOUT.line.front);
+    let dx = S[0] - F[0], dz = S[1] - F[1]; const dl = Math.hypot(dx, dz); dx /= dl; dz /= dl;
+    const sHit = -(S[0] + S[1]) / (dx + dz);                 // where the line meets the long wall (x = -z)
+    const u = Math.min(H.long - 4, Math.max(4, (S[0] + sHit * dx) / c));   // distance along the long wall
+    const houseToPlace = (X, Y, Z) => new THREE.Vector3(X * c + Z * c, Y, -X * c + Z * c);
+    const wallSide = houseToPlace(1, 0, 0), wallOut = houseToPlace(0, 0, 1);
+    const pts = [];   // {p, side}
+    const floorSide = new THREE.Vector3(-dz, 0, dx);
+    const start = -26, N1 = 46;
+    for (let i = 0; i <= N1; i++) { const s = start + (sHit - start) * i / N1; pts.push({ p: new THREE.Vector3(S[0] + s * dx, 0.9, S[1] + s * dz), side: floorSide }); }
+    const N2 = 30;
+    for (let i = 1; i <= N2; i++) { const yy = (H.eave - 0.8) * i / N2; pts.push({ p: houseToPlace(u, yy, 0).add(wallOut.clone().multiplyScalar(0.6)), side: wallSide }); }
+    const N3 = 26, ridgeY = H.ridge + 0.3, sinp = Math.sin(p), cosp = Math.cos(p);
+    for (let i = 0; i <= N3; i++) { const s = LAYOUT.roof.slope * (1 - i / N3);
+      const X = u - H.long / 2 + H.long / 2, Y = ridgeY - s * sinp + 0.6 * cosp, Z = -H.gable / 2 + s * cosp + 0.6 * sinp;
+      pts.push({ p: houseToPlace(X, Y, Z), side: wallSide }); }
+    const pos = [], n = pts.length;
+    const width = i => 1.5 + 0.55 * Math.sin(i * 0.9) + 0.35 * Math.sin(i * 2.3 + 1) + (i < 6 ? 0.4 : 0);
+    for (let i = 0; i < n - 1; i++) {
+      const a = pts[i], b = pts[i + 1], wa = width(i), wb = width(i + 1);
+      const a0 = a.p.clone().addScaledVector(a.side, -wa), a1 = a.p.clone().addScaledVector(a.side, wa);
+      const b0 = b.p.clone().addScaledVector(b.side, -wb), b1 = b.p.clone().addScaledVector(b.side, wb);
+      pos.push(...a0.toArray(), ...a1.toArray(), ...b1.toArray(), ...a0.toArray(), ...b1.toArray(), ...b0.toArray());
+    }
+    this.streak.geometry.dispose();
+    this.streak.geometry = new THREE.BufferGeometry(); this.streak.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    this.streakSegs = n - 1;
   },
 
   apply() {
-    const s = ALIGN.size / 100;
-    this.place.position.set(ALIGN.moveX, ALIGN.lift, -(LAYOUT.cornerAway + ALIGN.moveY));
+    const s = ALIGN.size / 100, T = LAYOUT.target;
+    const tcx = T.x + T.w / 2, tcy = T.y + T.h / 2;
+    this.place.position.set(LAYOUT.houseCorner[0] - tcx + ALIGN.moveX, ALIGN.lift, LAYOUT.houseCorner[1] - tcy - ALIGN.moveY);
     this.place.rotation.y = deg(ALIGN.turn);
     this.place.scale.set(s, s * ALIGN.heightStretch / 100, s);
     const p = deg(ALIGN.roofPitch);
-    this.roofA.rotation.x = p - Math.PI / 2;
-    this.roofB.rotation.x = p - Math.PI / 2;
+    this.roofA.rotation.x = p - Math.PI / 2; this.roofB.rotation.x = p - Math.PI / 2;
+    this.buildStreak();
   },
 
-  /* sequence control, called from tracking events */
   found() {
     const s = this.seq, now = performance.now() / 1000;
-    if (s.t0 === null || (s.lostAt !== null && now - s.lostAt > 1.5)) { s.t0 = now; s.speed = (s.everDone ? 1.6 : 1) * SCAN_SPEED; s.done = false; }
+    if (s.t0 === null) { s.t0 = now; s.offset = 0; }
+    else if (s.lostAt !== null) {
+      const gap = now - s.lostAt;
+      if (gap > 1.5 && this.time() < SEQ.red[0]) { s.t0 = now; s.offset = 0; }   // lost during the scan: scan again
+      else s.t0 += gap;                                                         // otherwise pause while out of view
+    }
     s.lostAt = null;
   },
   lost() { this.seq.lostAt = performance.now() / 1000; },
-  restart() { this.seq.t0 = performance.now() / 1000; this.seq.speed = SCAN_SPEED; this.seq.done = false; },
+  time() { const s = this.seq; if (s.t0 === null) return 0; const now = s.lostAt !== null ? s.lostAt : performance.now() / 1000; return (now - s.t0) * SPEED + s.offset; },
+  replay() { this.seq.t0 = performance.now() / 1000; this.seq.offset = SEQ.red[0] - 0.4; this.seq.lostAt = null; },
 
   tick() {
     const s = this.seq, r = this.el.sceneEl.renderer;
     if (r && !r.localClippingEnabled) r.localClippingEnabled = true;
     const tracking = this.el.parentNode.object3D.visible && s.t0 !== null;
-    const t = s.t0 === null ? 0 : (performance.now() / 1000 - s.t0) * s.speed;
-    const H = LAYOUT.house;
+    const t = this.time(), H = LAYOUT.house, U = this.U;
 
-    // 1 · pattern: flash the printed image
-    const pp = prog(SCAN.pattern, t), pf = 1 - prog([SCAN.pattern[1], SCAN.pattern[1] + 0.8], t);
+    this.place.updateWorldMatrix(true, false);
+    this.placeInv.copy(this.place.matrixWorld).invert();
+
+    // --- scan ---
+    const pp = prog(SEQ.pattern, t), pf = 1 - prog([SEQ.pattern[1], SEQ.pattern[1] + 0.8], t);
     this.patMat.opacity = 0.35 * Math.sin(pp * Math.PI * 2.5) ** 2 * pf + 0.08 * pf;
     this.patLineMat.opacity = pf;
     this.patLine.geometry.setDrawRange(0, Math.ceil(ease(pp) * this.patLine.userData.n));
-
-    // 2 · card: outline draws around the card
-    const cp = prog(SCAN.card, t);
+    const cp = prog(SEQ.card, t), settle = prog(SEQ.settle, t);
     this.cardLine.geometry.setDrawRange(0, Math.ceil(ease(cp) * this.cardLine.userData.n));
-    this.cardLine.visible = VIEW.outline && cp > 0;
-    this.fold.visible = VIEW.outline && cp >= 1;
-
-    // 3 + 4 · walls then roof: scan plane rises, geometry revealed below it
-    const rp = prog(SCAN.rise, t), h = SCAN.top * ease(rp) - 0.5;
-    const settle = prog(SCAN.settle, t);
+    this.cardMat.opacity = 0.95 * (1 - settle);
+    this.cardLine.visible = cp > 0 && (settle < 1 || VIEW.calib);
+    this.fold.visible = cp >= 1 && (settle < 1 || VIEW.calib);
+    if (VIEW.calib) this.cardMat.opacity = 0.95;
+    const rp = prog(SEQ.rise, t), h = SEQ.top * ease(rp) - 0.5;
     this.scanPlane.position.set(H.long / 2, Math.max(h, 0), -H.gable / 2);
     this.scanMat.opacity = rp > 0 ? 0.9 * (1 - settle) : 0;
-    this.place.updateWorldMatrix(true, false);
     this.up.set(0, 1, 0).transformDirection(this.place.matrixWorld);
-    this.place.localToWorld(this.v.set(0, settle >= 1 ? 1e4 : h, 0));
+    this.place.localToWorld(this.v.set(0, settle >= 1 || VIEW.calib ? 1e4 : h, 0));
     this.clip.setFromNormalAndCoplanarPoint(this.up.clone().negate(), this.v);
+    this.edgeMat.opacity = VIEW.calib ? 0.9 : 1 - settle;
+    this.edgeMat.color.copy(VIEW.calib ? WHITE : CYAN);
+    this.edgeMat.visible = VIEW.calib || settle < 1;
 
-    // colour: cyan while scanning, then the red test fill
-    this.fillMat.color.copy(CYAN).lerp(RED, settle);
-    this.fillMat.opacity = (0.3 + (VIEW.fill - 0.3) * settle);
-    this.fillMat.visible = VIEW.fill > 0 || settle < 1;
-    this.edgeMat.color.copy(CYAN).lerp(WHITE, settle);
-    this.edgeMat.visible = VIEW.edges || settle < 1;
+    // --- paint ---
+    U.uScan.value = VIEW.calib ? 0 : 1 - settle;
+    U.uRedP.value = ease(prog(SEQ.red, t));
+    U.uArtP.value = ease(prog(SEQ.art, t));
+    const wh = ease(prog(SEQ.whiteHouse, t));
+    U.uWhiteP.value = wh; U.uWhiteFloorP.value = ease(prog(SEQ.whiteFloor, t));
+    U.uCalib.value = VIEW.calib ? 1 : 0; U.uCalibFill.value = VIEW.fill;
+    const sp = prog(SEQ.streak, t);
+    this.streak.visible = !VIEW.calib && sp > 0;
+    this.streak.geometry.setDrawRange(0, Math.ceil(ease(sp) * this.streakSegs) * 6);
+    this.streakMat.opacity = 0.95 * (1 - prog([SEQ.whiteHouse[0] + 0.6, SEQ.whiteHouse[1] - 0.6], t));
+    this.floor.visible = !VIEW.calib;
 
-    // checklist + status
-    const wallsDone = h >= H.eave, roofOn = h >= 31, roofDone = rp >= 1;
+    // --- checklist + status ---
+    const wallsDone = h >= H.eave, roofDone = rp >= 1;
     setStep('pattern', pp >= 1 ? 'done' : 'active');
     setStep('card', cp >= 1 ? 'done' : cp > 0 ? 'active' : '');
     setStep('walls', wallsDone ? 'done' : rp > 0 ? 'active' : '');
-    setStep('roof', roofDone ? 'done' : roofOn ? 'active' : '');
+    setStep('roof', roofDone ? 'done' : h >= 31 ? 'active' : '');
+    $('steps').classList.toggle('show', tracking && t < SEQ.red[0] + 0.6 && !VIEW.calib);
     if (tracking) {
-      if (settle >= 1 && !s.done) { s.done = s.everDone = true; }
-      setStatus(s.done ? 'ok' : 'scan', s.done ? 'House identified ✓' : 'Scanning the house…');
+      if (VIEW.calib) setStatus('ok', 'Adjusting fit');
+      else if (t < SEQ.settle[1]) setStatus('scan', 'Scanning the house…');
+      else if (t < SEQ.red[0]) setStatus('ok', 'House identified ✓');
+      else if (t < SEQ.streak[0]) setStatus('paint', 'The house turns red…');
+      else if (t < SEQ.whiteHouse[0]) setStatus('paint', 'The artwork climbs the house…');
+      else if (t < SEQ.end) setStatus('paint', 'Everything turns white…');
+      else setStatus('ok', 'Done · tap Replay');
     }
 
-    // floating labels follow their part on screen
+    // --- labels ---
     const cam = this.el.sceneEl.camera, canvas = this.el.sceneEl.canvas;
-    const show = {
-      pattern: pp > 0 && pf > 0, card: cp > 0.15 && settle < 1,
-      wall: h > H.eave * 0.35 && settle < 1, roof: h > H.ridge && settle < 1
-    };
+    const show = { pattern: pp > 0 && pf > 0, card: cp > 0.15 && settle < 1, wall: h > H.eave * 0.35 && settle < 1, roof: h > H.ridge && settle < 1 };
     const done = { pattern: pp >= 1, card: cp >= 1, wall: wallsDone, roof: roofDone };
     if (cam && canvas) {
       const rect = canvas.getBoundingClientRect();
       for (const k in this.labelPts) {
-        const el = this.tags[k], [obj, local] = this.labelPts[k];
-        const on = tracking && show[k];
+        const el = this.tags[k], [obj, local] = this.labelPts[k], on = tracking && show[k] && !VIEW.calib;
         el.classList.toggle('show', on); el.classList.toggle('done', done[k]);
         if (!on) continue;
         obj.localToWorld(this.v.copy(local)).project(cam);
@@ -402,23 +514,18 @@ AFRAME.registerComponent('house-overlay', {
   }
 });
 
-/* ---------------- status, finder, checklist ---------------- */
-function setStatus(kind, text) { const st = $('status'); st.className = kind; $('statusText').textContent = text; }
+/* ---------------- status / finder ---------------- */
+function setStatus(kind, text) { const st = $('status'); if (st.className !== kind) st.className = kind; if ($('statusText').textContent !== text) $('statusText').textContent = text; }
 const stepEls = {}; document.querySelectorAll('.step').forEach(e => stepEls[e.dataset.s] = e);
 function setStep(k, state) { const e = stepEls[k]; const c = 'step' + (state ? ' ' + state : ''); if (e.className !== c) e.className = c; }
-function searching(on) { $('finder').classList.toggle('hide', !on); $('steps').classList.toggle('show', !on); }
-
 const anchor = $('anchor');
-anchor.addEventListener('targetFound', () => { searching(false); window.overlay && window.overlay.found(); });
-anchor.addEventListener('targetLost', () => {
-  searching(true); window.overlay && window.overlay.lost();
-  setStatus('', 'Lost the pattern. Point back at the mat');
-});
-$('scene').addEventListener('arReady', () => setStatus('', 'Searching for the pattern'));
+anchor.addEventListener('targetFound', () => { $('finder').classList.add('hide'); window.overlay && window.overlay.found(); });
+anchor.addEventListener('targetLost', () => { $('finder').classList.remove('hide'); window.overlay && window.overlay.lost(); setStatus('', 'Lost the artwork. Point back at it'); });
+$('scene').addEventListener('arReady', () => setStatus('', 'Looking for the artwork'));
 $('scene').addEventListener('arError', () => setStatus('', 'Camera unavailable. Check permission.'));
-$('rescan').onclick = () => window.overlay && window.overlay.restart();
+$('replay').onclick = () => window.overlay && window.overlay.replay();
 
-/* ---------------- calibration drawer ---------------- */
+/* ---------------- adjust-fit drawer ---------------- */
 const PARAMS = [
   { k: 'moveX', label: 'Left / right', unit: 'mm', fine: .5, coarse: 2, hint: '+ moves right' },
   { k: 'moveY', label: 'Near / far', unit: 'mm', fine: .5, coarse: 2, hint: '+ moves away from you' },
@@ -426,15 +533,14 @@ const PARAMS = [
   { k: 'size', label: 'Size', unit: '%', fine: .5, coarse: 2, hint: 'whole overlay, around the front corner' },
   { k: 'heightStretch', label: 'Height stretch', unit: '%', fine: 1, coarse: 5, hint: 'vertical only; use if the roof slides as you move' },
   { k: 'roofPitch', label: 'Roof pitch', unit: '°', fine: 1, coarse: 4, hint: 'steeper or flatter roof faces' },
-  { k: 'lift', label: 'Lift', unit: 'mm', fine: .5, coarse: 2, hint: '+ raises everything off the mat' },
+  { k: 'lift', label: 'Lift', unit: 'mm', fine: .5, coarse: 2, hint: '+ raises everything off the base' },
   { k: 'cameraFov', label: 'Camera FOV', unit: '°', fine: 1, coarse: 3, hint: 'fixes the far edge; tap Reload to apply' }
 ];
 let cur = PARAMS[0], coarse = false;
 const fmt = v => (Math.round(v * 10) / 10).toFixed(1);
 function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(ALIGN)); } catch (e) {} }
 function render() {
-  $('val').textContent = fmt(ALIGN[cur.k]) + ' ' + cur.unit;
-  $('hint').textContent = cur.hint;
+  $('val').textContent = fmt(ALIGN[cur.k]) + ' ' + cur.unit; $('hint').textContent = cur.hint;
   $('reload').style.display = ALIGN.cameraFov !== window.MINDAR_FOVY ? '' : 'none';
   document.querySelectorAll('#params button').forEach(b => b.classList.toggle('sel', b.dataset.k === cur.k));
   window.overlay && window.overlay.apply();
@@ -448,10 +554,8 @@ function holdRepeat(btn, dir) {
 }
 holdRepeat($('minus'), -1); holdRepeat($('plus'), 1);
 $('step').onclick = () => { coarse = !coarse; $('step').textContent = 'Step: ' + (coarse ? 'coarse' : 'fine'); };
-const FILLS = [0.55, 0.85, 0.3, 0];
-$('fill').onclick = () => { VIEW.fill = FILLS[(FILLS.indexOf(VIEW.fill) + 1) % FILLS.length]; $('fill').textContent = 'Fill ' + Math.round(VIEW.fill * 100) + '%'; render(); };
-$('edges').onclick = () => { VIEW.edges = !VIEW.edges; $('edges').classList.toggle('on', VIEW.edges); render(); };
-$('outline').onclick = () => { VIEW.outline = !VIEW.outline; $('outline').classList.toggle('on', VIEW.outline); render(); };
+const FILLS = [0.55, 0.85, 0.3];
+$('fill').onclick = () => { VIEW.fill = FILLS[(FILLS.indexOf(VIEW.fill) + 1) % FILLS.length]; $('fill').textContent = 'Fill ' + Math.round(VIEW.fill * 100) + '%'; };
 $('reset').onclick = () => { Object.assign(ALIGN, ALIGN_DEFAULT); save(); render(); toast('Back to defaults'); };
 $('copy').onclick = async () => {
   const txt = 'ALIGN ' + JSON.stringify(ALIGN);
@@ -459,8 +563,8 @@ $('copy').onclick = async () => {
   try { await navigator.clipboard.writeText(txt); toast('Copied. Paste it to Claude.'); } catch (e) { $('copyBox').select(); toast('Select the text below and copy it'); }
 };
 $('reload').onclick = () => { save(); location.replace(location.pathname); };
-$('openPanel').onclick = () => { $('panel').classList.add('open'); $('bar').style.visibility = 'hidden'; };
-$('closePanel').onclick = () => { $('panel').classList.remove('open'); $('bar').style.visibility = ''; };
+$('openPanel').onclick = () => { VIEW.calib = true; $('panel').classList.add('open'); $('bar').style.visibility = 'hidden'; };
+$('closePanel').onclick = () => { VIEW.calib = false; $('panel').classList.remove('open'); $('bar').style.visibility = ''; };
 let tt; function toast(m) { $('toast').textContent = m; $('toast').classList.add('show'); clearTimeout(tt); tt = setTimeout(() => $('toast').classList.remove('show'), 1800); }
 render();
 </script>

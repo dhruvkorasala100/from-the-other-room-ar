@@ -9,8 +9,8 @@ const srv = http.createServer((q, r) => { let u = decodeURIComponent(q.url.split
   const ctx = await b.newContext({ viewport: { width: 360, height: 640 }, deviceScaleFactor: Number(process.env.DPR || 2), permissions: ['camera'] });
   const p = await ctx.newPage(); const errs = [];
   p.on('pageerror', e => errs.push(String(e))); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  await p.goto(`http://localhost:8767/?reset${query || ''}`);
-  await p.waitForFunction(() => /Searching/.test(document.getElementById('statusText').textContent), null, { timeout: 60000 }).catch(() => {});
+  await p.goto((process.env.LIVE || 'http://localhost:8767/') + `?reset${query || ''}`);
+  await p.waitForFunction(() => /Searching|Looking/.test(document.getElementById('statusText').textContent), null, { timeout: 60000 }).catch(() => {});
   await p.screenshot({ path: `${outDir}/00-search.png` });
   const t0 = Date.now();
   await p.waitForFunction(() => /scan|ok/.test(document.getElementById('status').className), null, { timeout: 90000 });
