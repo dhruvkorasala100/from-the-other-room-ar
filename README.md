@@ -6,7 +6,10 @@ Point a phone at the printed placement mat and the overlay sits on the real card
 **Stage 1 (now):** visible scan sequence (pattern → card → walls → roof → "House identified") that settles into a static red overlay, plus an "Adjust fit" calibration drawer.
 **Stage 2 (next):** red wash → black acrylic marks across the ground → streak climbs the wall → white acrylic covers the house.
 
-## Use
+## Quick try, no printing: `try.html`
+Open `/try.html`, point at the house, tap Play. It recolours the white paper in the live camera image (room-light corrected, keeps only the paper you point at, fills shaded walls framed by paper). No 3D tracking, so marks follow the screen, not a specific wall.
+
+## Precise version with the printed mat: `index.html`
 1. Print `placement-mat.pdf` on US Letter at **100% / Actual size** (the 40 mm bar should measure 40 mm).
 2. Open the card flat on the mat inside the corner marks, fold on the tick marks, house front corner toward the image. Tape the two outer edges.
 3. Open the site on the phone, allow the camera, point at the image.
