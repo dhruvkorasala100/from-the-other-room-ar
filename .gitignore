@@ -1,0 +1,4 @@
+node_modules/
+*.y4m
+test/
+.DS_Store

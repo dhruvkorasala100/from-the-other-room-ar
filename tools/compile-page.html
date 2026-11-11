@@ -1,0 +1,12 @@
+<!doctype html><html><body><script type="module">
+import {Compiler} from './mindar-image.prod.js';
+window.runCompile = async () => {
+  const img = new Image(); img.src = 'target.jpg'; await img.decode();
+  const c = new Compiler();
+  await c.compileImageTargets([img], p => { window.__p = p; });
+  const buf = await c.exportData();
+  let s = ''; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s);
+};
+window.ready = true;
+</script></body></html>

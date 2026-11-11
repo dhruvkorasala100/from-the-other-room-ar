@@ -1,0 +1,11 @@
+const {chromium} = require('playwright'); const http = require('http'); const fs = require('fs'); const path = require('path');
+const root = process.argv[2], out = process.argv[3];
+const types = {'.js':'text/javascript','.html':'text/html','.jpg':'image/jpeg'};
+const srv = http.createServer((q, r) => { const f = path.join(root, decodeURIComponent(q.url.split('?')[0]) === '/' ? 'index.html' : q.url.slice(1));
+  fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, {'Content-Type': types[path.extname(f)] || 'application/octet-stream'}); r.end(d); }); }).listen(8765);
+(async () => { const b = await chromium.launch(); const p = await b.newPage();
+  p.on('console', m => console.log('page:', m.text()));
+  await p.goto('http://localhost:8765/'); await p.waitForFunction('window.ready');
+  const b64 = await p.evaluate(() => window.runCompile());
+  fs.writeFileSync(out, Buffer.from(b64, 'base64')); console.log('wrote', out, fs.statSync(out).size, 'bytes');
+  await b.close(); srv.close(); })().catch(e => { console.error(e); process.exit(1); });
