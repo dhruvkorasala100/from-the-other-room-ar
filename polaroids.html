@@ -28,15 +28,13 @@ const ALIGN = Object.assign({}, ALIGN_DEFAULT);
 
 /* Layout in mm.
    Book frame: origin = centre fold on the book's front edge; X right, Z toward the viewer.
-   The open spread (Sabuda card base) is 190.5 wide x 104.8 deep; the house's front corner is
-   on the fold 31.7 behind the front edge, walls at 45°. */
+   The open spread (Sabuda card base) is 190.5 wide x 104.8 deep. */
 const LAYOUT = {
   target: { w: 200, h: 100 },          // printed target size
   bookEdgeFromTarget: 66,              // book front edge: distance behind the target centre
-  photo: { w: 54, h: 66 },             // Polaroid size on the page
-  left:  { x: -56, z: -40, rot: -3 },  // India
-  right: { x: 62,  z: -40, rot: 2.5 }, // America
-  house: { corner: -31.7, long: 50.8, gable: 38.1, eave: 38.1, ridge: 50.8, roofLen: 57.1, roofSlope: 34.9, pitch: 33.7 }
+  photo: { w: 54, h: 66, hover: 8 },   // Polaroid size; bottom edge floats this far above the page
+  left:  { x: -60, z: -52 },           // India, over the middle of the left page
+  right: { x: 62,  z: -52 }            // America, over the middle of the right page
 };
 const FADE = 0.8;   // seconds for the photos to appear
 </script>
@@ -83,58 +81,30 @@ const THREE = AFRAME.THREE;
 const deg = d => d * Math.PI / 180;
 const $ = id => document.getElementById(id);
 
-function shapeFrom(pts) { const s = new THREE.Shape(); pts.forEach((p, i) => i ? s.lineTo(p[0], p[1]) : s.moveTo(p[0], p[1])); s.closePath(); return s; }
-function shadowTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
-  g.filter = 'blur(9px)'; g.fillStyle = 'rgba(0,0,0,1)'; g.fillRect(22, 22, 84, 84);
-  const t = new THREE.CanvasTexture(c); return t;
-}
-
 AFRAME.registerComponent('polaroids', {
   init() {
-    const T = LAYOUT.target, P = LAYOUT.photo, H = LAYOUT.house;
-    const renderer = this.el.sceneEl.renderer;
+    const T = LAYOUT.target, P = LAYOUT.photo;
     const loader = new THREE.TextureLoader();
-    const tex = src => { const t = loader.load(src); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 8; return t; };
+    const tex = src => { const t = loader.load(src); t.colorSpace = THREE.SRGBColorSpace; return t; };
 
-    // root: MindAR units (1 = target width) -> mm; image plane -> Y up, Z toward the viewer; origin = target centre
+    // root: MindAR units (1 = target width) -> mm; Y up, Z toward the viewer; origin = target centre
     this.root = new THREE.Group(); this.root.scale.setScalar(1 / T.w); this.root.rotation.x = Math.PI / 2;
     this.book = new THREE.Group(); this.root.add(this.book);
 
-    // the real house hides whatever is behind it (depth only, never drawn)
-    const occ = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
-    const house = new THREE.Group(); house.position.set(0, 0, H.corner); house.rotation.y = Math.PI / 4;
-    const wall = (geo, pos, ry) => { const m = new THREE.Mesh(geo, occ); m.position.set(...pos); m.rotation.y = ry || 0; m.renderOrder = 0; house.add(m); };
-    const longW = new THREE.ShapeGeometry(shapeFrom([[0, 0], [H.long, 0], [H.long, H.eave], [0, H.eave]]));
-    const gA = new THREE.ShapeGeometry(shapeFrom([[-H.gable, 0], [0, 0], [0, H.eave], [-H.gable / 2, H.ridge], [-H.gable, H.eave]]));
-    const gB = new THREE.ShapeGeometry(shapeFrom([[0, 0], [H.gable, 0], [H.gable, H.eave], [H.gable / 2, H.ridge], [0, H.eave]]));
-    wall(longW, [0, 0, 0]); wall(longW, [H.long, 0, -H.gable], Math.PI); wall(gA, [0, 0, 0], -Math.PI / 2); wall(gB, [H.long, 0, 0], Math.PI / 2);
-    const roofGeo = new THREE.PlaneGeometry(H.roofLen, H.roofSlope).translate(0, -H.roofSlope / 2, 0);
-    const ridge = new THREE.Group(); ridge.position.set(H.long / 2, H.ridge, -H.gable / 2); house.add(ridge);
-    const rA = new THREE.Mesh(roofGeo, occ); rA.rotation.x = deg(H.pitch) - Math.PI / 2; ridge.add(rA);
-    const flip = new THREE.Group(); flip.rotation.y = Math.PI; ridge.add(flip);
-    const rB = new THREE.Mesh(roofGeo, occ); rB.rotation.x = deg(H.pitch) - Math.PI / 2; flip.add(rB);
-    this.book.add(house);
-
-    // the two Polaroids, lying flat on the pages, caption toward the viewer
-    this.mats = [];
-    const shadowTex = shadowTexture();
+    // each Polaroid floats upright above its page and turns to face the viewer
+    this.mats = []; this.cards = [];
     const photo = (src, spot) => {
-      const g = new THREE.Group(); g.position.set(spot.x, 0, spot.z); g.rotation.y = deg(-spot.rot);
-      const sm = new THREE.MeshBasicMaterial({ map: shadowTex, color: 0x000000, transparent: true, opacity: 0, depthWrite: false });
-      const sh = new THREE.Mesh(new THREE.PlaneGeometry(P.w * 1.32, P.h * 1.28), sm);
-      sh.rotation.x = -Math.PI / 2; sh.position.set(1.6, 0.2, 1.4); sh.renderOrder = 1; sm.userData.max = 0.42;
-      const pm = new THREE.MeshBasicMaterial({ map: tex(src), transparent: true, opacity: 0 });
-      const ph = new THREE.Mesh(new THREE.PlaneGeometry(P.w, P.h), pm);
-      ph.rotation.x = -Math.PI / 2; ph.position.y = 0.6; ph.renderOrder = 2; pm.userData.max = 1;
-      g.add(sh, ph); this.book.add(g); this.mats.push(sm, pm); return ph;
+      const g = new THREE.Group(); g.position.set(spot.x, P.hover + P.h / 2, spot.z);
+      const m = new THREE.MeshBasicMaterial({ map: tex(src), transparent: true, opacity: 0, side: THREE.DoubleSide });
+      g.add(new THREE.Mesh(new THREE.PlaneGeometry(P.w, P.h), m));
+      this.book.add(g); this.mats.push(m); this.cards.push(g); return g;
     };
     this.india = photo('./polaroids/polaroid-india.jpg', LAYOUT.left);
     this.america = photo('./polaroids/polaroid-america.jpg', LAYOUT.right);
 
     this.el.object3D.add(this.root);
     window.overlay = this;
-    this.shownAt = null;
+    this.shownAt = null; this.v = new THREE.Vector3();
     this.apply();
     const anchor = this.el.parentNode;
     anchor.addEventListener('targetFound', () => { this.shownAt = performance.now(); $('hint').classList.add('hide'); });
@@ -148,8 +118,12 @@ AFRAME.registerComponent('polaroids', {
   },
   tick() {
     const a = this.shownAt === null ? 0 : Math.min(1, (performance.now() - this.shownAt) / 1000 / FADE);
-    const e = a * a * (3 - 2 * a);
-    for (const m of this.mats) m.opacity = m.userData.max * e;
+    for (const m of this.mats) m.opacity = a * a * (3 - 2 * a);
+    // turn each photo (around the vertical only) toward the phone
+    const cam = this.el.sceneEl.camera; if (!cam || !this.el.parentNode.object3D.visible) return;
+    this.root.updateWorldMatrix(true, true);
+    cam.getWorldPosition(this.v); this.book.worldToLocal(this.v);
+    for (const g of this.cards) g.rotation.y = Math.atan2(this.v.x - g.position.x, this.v.z - g.position.z);
   }
 });
 
