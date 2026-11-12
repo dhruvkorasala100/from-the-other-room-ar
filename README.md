@@ -13,14 +13,11 @@ Sequence: scan (artwork → card → walls → roof) → the whole house turns r
 The artwork (IMG_6944) is printed rotated 180° so the red circle sits just in front of the card. The phone tracks the visible front strip (page x 8–208 mm, y 118–268 mm).
 
 ## Polaroid prototype (`polaroids.html`)
-Two childhood photos float as upright Polaroids above the red pages of the pop-up book: India over the left page
-("నా చెయ్యి పట్టుకుని నాతో నడిచారు."), America over the right page ("I was still finding my balance.").
-1. Print `polaroids/book-target.pdf` on US Letter, **landscape, 100% / Actual size** (the bar measures 50 mm).
-2. Put the sheet on the table with the target nearest you. Open the book behind it, front edge on the printed line,
-   centre fold on the triangle. Tape both down.
-3. Open `polaroids.html`, allow the camera, point at the book with the printed sheet in view.
-Each photo turns to face the phone. Captions are pre-rendered into the Polaroid images (Noto Sans Telugu / Noto Sans) so they render the same on every phone.
-Fine-tune with `polaroids.html?adjust` and paste the copied values into `ALIGN_DEFAULT`.
+Point the phone at the open pop-up book: a Polaroid floats upright above each red page, turned toward the phone.
+Left page: India, "నా చెయ్యి పట్టుకుని నాతో నడిచారు." Right page: America, "I was still finding my balance."
+No printed target: each painted page is its own tracking image (`polaroids/pages/left.jpg`, `right.jpg`,
+compiled into `targets/pages-v1.mind`). Captions are pre-rendered into the Polaroid images (Noto Sans Telugu / Noto Sans).
+The bundled MindAR is patched to request a 1280×720 camera stream (Safari defaults to 640×480).
 
 ## Other pages
 - `mat.html` + `placement-mat.pdf`: earlier test with a generated pattern and a static red overlay.

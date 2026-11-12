@@ -4,176 +4,83 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>From the Other Room · Polaroids</title>
+<script>window.MINDAR_FOVY = 63;   // phone camera field of view (long side), read by the bundled MindAR</script>
 <script src="./lib/aframe-v1.5.0.min.js"></script>
 <script src="./lib/mindar-image-aframe.prod.js"></script>
 <script>
-/* =====================================================================
-   ALIGNMENT  (fine-tune by opening this page with ?adjust, then paste
-   the copied values here)
-   moveX  mm  + slides both photos to the RIGHT
-   moveY  mm  + slides both photos AWAY from you
-   turn   deg + turns them counter-clockwise, seen from above
-   size   %   100 = book and target sheet printed at 100%
-   cameraFov deg  phone camera field of view (long side); 63 suits most phones
-   ===================================================================== */
-const ALIGN_DEFAULT = { moveX: 0, moveY: 0, turn: 0, size: 100, cameraFov: 63 };
-const STORE_KEY = 'fotr-polaroids-v1';
-const ADJUST = new URLSearchParams(location.search).has('adjust');
-const ALIGN = Object.assign({}, ALIGN_DEFAULT);
-(() => {
-  // saved values are only used in adjust mode, so visitors always get the values in this file
-  if (ADJUST) { try { Object.assign(ALIGN, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch (e) {} }
-  window.MINDAR_FOVY = ALIGN.cameraFov;
-})();
-
-/* Layout in mm.
-   Book frame: origin = centre fold on the book's front edge; X right, Z toward the viewer.
-   The open spread (Sabuda card base) is 190.5 wide x 104.8 deep. */
-const LAYOUT = {
-  target: { w: 200, h: 100 },          // printed target size
-  bookEdgeFromTarget: 66,              // book front edge: distance behind the target centre
-  photo: { w: 54, h: 66, hover: 8 },   // Polaroid size; bottom edge floats this far above the page
-  left:  { x: -60, z: -52 },           // India, over the middle of the left page
-  right: { x: 62,  z: -52 }            // America, over the middle of the right page
-};
-const FADE = 0.8;   // seconds for the photos to appear
+/* Each red page of the book is its own tracking image (polaroids/pages/left.jpg, right.jpg).
+   Sizes in mm. A page is 95.25 wide x 104.8 deep. */
+const PAGE_W = 95.25;
+const PHOTO = { w: 54, h: 66, hover: 8 };   // Polaroid size; its bottom edge floats this far above the page
+const FADE = 0.8;                           // seconds to appear
 </script>
 <style>
   html { background: #000; }
   /* body stays transparent: MindAR puts the camera <video> behind the scene */
   html, body { margin: 0; height: 100%; overflow: hidden; font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #fff; -webkit-user-select: none; user-select: none; }
   a-scene { position: fixed; inset: 0; }
-  .a-enter-vr, .a-enter-ar, .a-orientation-modal { display: none !important; }   /* A-Frame's VR/AR buttons */
+  .a-enter-vr, .a-enter-ar, .a-orientation-modal { display: none !important; }
   #hint { position: fixed; left: 50%; bottom: max(28px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 5; background: rgba(14,14,16,.72); padding: 9px 16px; border-radius: 99px; font-size: 14px; white-space: nowrap; transition: opacity .5s; pointer-events: none; }
   #hint.hide { opacity: 0; }
-  #panel { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: rgba(14,14,16,.86); padding: 10px 14px max(12px, env(safe-area-inset-bottom)); }
-  #panel.on { display: block; }
-  #panel .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  #panel button { font: inherit; font-size: 13px; color: #fff; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-radius: 9px; padding: 7px 10px; }
-  #panel button.sel { background: #b3262a; border-color: #b3262a; }
-  #panel .big { width: 58px; height: 46px; font-size: 24px; }
-  #val { flex: 1; text-align: center; font-size: 20px; font-variant-numeric: tabular-nums; }
-  #copyBox { width: 100%; box-sizing: border-box; height: 52px; background: #000; color: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; font: 12px ui-monospace, Menlo, monospace; display: none; }
 </style>
 </head>
 <body>
 <div id="hint">Point your phone at the open book</div>
 
-<div id="panel">
-  <div class="row" id="params"></div>
-  <div class="row"><button class="big" id="minus">−</button><div id="val"></div><button class="big" id="plus">+</button></div>
-  <div class="row"><button id="copy">Copy values</button><button id="reset">Reset</button><button id="reload" style="display:none">Reload to apply FOV</button></div>
-  <textarea id="copyBox" readonly></textarea>
-</div>
-
 <a-scene id="scene"
-  mindar-image="imageTargetSrc: ./targets/mat-v1.mind; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 8; warmupTolerance: 3; uiScanning: no; uiLoading: yes; uiError: yes"
+  mindar-image="imageTargetSrc: ./targets/pages-v1.mind; maxTrack: 2; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 8; warmupTolerance: 3; uiScanning: no; uiLoading: yes; uiError: yes"
   color-space="sRGB" renderer="colorManagement: true; antialias: true; alpha: true"
   vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
   <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: none"></a-camera>
-  <a-entity id="anchor" mindar-image-target="targetIndex: 0">
-    <a-entity polaroids></a-entity>
-  </a-entity>
+  <a-entity mindar-image-target="targetIndex: 0"><a-entity polaroid="src: ./polaroids/polaroid-india.jpg"></a-entity></a-entity>
+  <a-entity mindar-image-target="targetIndex: 1"><a-entity polaroid="src: ./polaroids/polaroid-america.jpg"></a-entity></a-entity>
 </a-scene>
 
 <script>
 const THREE = AFRAME.THREE;
-const deg = d => d * Math.PI / 180;
 const $ = id => document.getElementById(id);
+const tracked = new Set();
+const updateHint = () => $('hint').classList.toggle('hide', tracked.size > 0);
 
-AFRAME.registerComponent('polaroids', {
+/* One Polaroid floating upright above the middle of its page, turned toward the phone. */
+AFRAME.registerComponent('polaroid', {
+  schema: { src: { type: 'string' } },
   init() {
-    const T = LAYOUT.target, P = LAYOUT.photo;
-    const loader = new THREE.TextureLoader();
-    const tex = src => { const t = loader.load(src); t.colorSpace = THREE.SRGBColorSpace; return t; };
-
-    // root: MindAR units (1 = target width) -> mm; Y up, Z toward the viewer; origin = target centre
-    this.root = new THREE.Group(); this.root.scale.setScalar(1 / T.w); this.root.rotation.x = Math.PI / 2;
-    this.book = new THREE.Group(); this.root.add(this.book);
-
-    // each Polaroid floats upright above its page and turns to face the viewer
-    this.mats = []; this.cards = [];
-    const photo = (src, spot) => {
-      const g = new THREE.Group(); g.position.set(spot.x, P.hover + P.h / 2, spot.z);
-      const m = new THREE.MeshBasicMaterial({ map: tex(src), transparent: true, opacity: 0, side: THREE.DoubleSide });
-      g.add(new THREE.Mesh(new THREE.PlaneGeometry(P.w, P.h), m));
-      this.book.add(g); this.mats.push(m); this.cards.push(g); return g;
-    };
-    this.india = photo('./polaroids/polaroid-india.jpg', LAYOUT.left);
-    this.america = photo('./polaroids/polaroid-america.jpg', LAYOUT.right);
-
-    this.el.object3D.add(this.root);
-    window.overlay = this;
+    const tex = new THREE.TextureLoader().load(this.data.src); tex.colorSpace = THREE.SRGBColorSpace;
+    this.mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, side: THREE.DoubleSide });
+    // page frame in mm: origin = page centre, Y up off the page, Z toward the viewer
+    this.page = new THREE.Group(); this.page.scale.setScalar(1 / PAGE_W); this.page.rotation.x = Math.PI / 2;
+    this.card = new THREE.Mesh(new THREE.PlaneGeometry(PHOTO.w, PHOTO.h), this.mat);
+    this.card.position.set(0, PHOTO.hover + PHOTO.h / 2, 0);
+    this.page.add(this.card); this.el.object3D.add(this.page);
     this.shownAt = null; this.v = new THREE.Vector3();
-    this.apply();
-    const anchor = this.el.parentNode;
-    anchor.addEventListener('targetFound', () => { this.shownAt = performance.now(); $('hint').classList.add('hide'); });
-    anchor.addEventListener('targetLost', () => { this.shownAt = null; $('hint').classList.remove('hide'); });
-  },
-  apply() {
-    const s = ALIGN.size / 100;
-    this.book.position.set(ALIGN.moveX, 0, -(LAYOUT.bookEdgeFromTarget + ALIGN.moveY));
-    this.book.rotation.y = deg(ALIGN.turn);
-    this.book.scale.setScalar(s);
+    const anchor = this.el.parentNode, id = this.data.src;
+    anchor.addEventListener('targetFound', () => { this.shownAt = performance.now(); tracked.add(id); updateHint(); });
+    anchor.addEventListener('targetLost', () => { this.shownAt = null; tracked.delete(id); updateHint(); });
   },
   tick() {
     const a = this.shownAt === null ? 0 : Math.min(1, (performance.now() - this.shownAt) / 1000 / FADE);
-    for (const m of this.mats) m.opacity = a * a * (3 - 2 * a);
-    // turn each photo (around the vertical only) toward the phone
-    const cam = this.el.sceneEl.camera; if (!cam || !this.el.parentNode.object3D.visible) return;
-    this.root.updateWorldMatrix(true, true);
-    cam.getWorldPosition(this.v); this.book.worldToLocal(this.v);
-    for (const g of this.cards) g.rotation.y = Math.atan2(this.v.x - g.position.x, this.v.z - g.position.z);
+    this.mat.opacity = a * a * (3 - 2 * a);
+    const cam = this.el.sceneEl.camera; if (!cam || this.shownAt === null) return;
+    this.page.updateWorldMatrix(true, false);
+    cam.getWorldPosition(this.v); this.page.worldToLocal(this.v);
+    this.card.rotation.y = Math.atan2(this.v.x, this.v.z);   // face the phone, staying upright
   }
 });
 
 $('scene').addEventListener('arError', () => { $('hint').textContent = 'Camera unavailable. Allow camera access and reload.'; $('hint').classList.remove('hide'); });
 
-/* ---------- shown only if something goes wrong, so a screenshot says what failed ---------- */
+/* Shown only if something goes wrong, so a screenshot says what failed. */
 (() => {
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;left:12px;right:12px;top:max(12px,env(safe-area-inset-top));z-index:20;background:rgba(150,20,20,.92);color:#fff;font:12px/1.4 ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:8px;display:none;white-space:pre-wrap;word-break:break-word';
   document.body.appendChild(box);
-  const lines = [];
-  const show = m => { lines.push(m); box.textContent = lines.slice(-6).join('\n') + '\n' + navigator.userAgent.replace(/\(.*?\)/, m2 => m2.slice(0, 60)); box.style.display = 'block'; };
-  addEventListener('error', e => show('Error: ' + (e.message || e) + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : '')));
+  const lines = [], show = m => { lines.push(m); box.textContent = lines.slice(-6).join('\n'); box.style.display = 'block'; };
+  addEventListener('error', e => show('Error: ' + (e.message || e)));
   addEventListener('unhandledrejection', e => show('Promise: ' + (e.reason && (e.reason.name + ' ' + e.reason.message) || e.reason)));
-  if (!window.isSecureContext) show('Not a secure (https) page');
   if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) show('This browser view has no camera access. Open the link in Safari itself.');
-  $('scene').addEventListener('arError', e => show('arError: ' + JSON.stringify(e.detail || {})));
-  setTimeout(() => {
-    const v = document.querySelector('video');
-    if (!v) show('Camera never started (no video element after 10 s)');
-    else if (!v.videoWidth || v.paused) show(`Camera stream not playing: ${v.videoWidth}x${v.videoHeight}, paused=${v.paused}, readyState=${v.readyState}`);
-    const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) show('WebGL is unavailable');
-  }, 10000);
+  setTimeout(() => { const v = document.querySelector('video'); if (!v || !v.videoWidth || v.paused) show('Camera stream not playing'); }, 10000);
 })();
-
-/* ---------- hidden alignment panel: open the page with ?adjust ---------- */
-if (ADJUST) {
-  $('panel').classList.add('on');
-  const PARAMS = [
-    { k: 'moveX', label: 'Left/right', unit: 'mm', step: 1 }, { k: 'moveY', label: 'Near/far', unit: 'mm', step: 1 },
-    { k: 'turn', label: 'Turn', unit: '°', step: 0.5 }, { k: 'size', label: 'Size', unit: '%', step: 1 },
-    { k: 'cameraFov', label: 'Camera FOV', unit: '°', step: 1 }
-  ];
-  let cur = PARAMS[0];
-  const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(ALIGN)); } catch (e) {} };
-  const render = () => {
-    $('val').textContent = (Math.round(ALIGN[cur.k] * 10) / 10) + ' ' + cur.unit;
-    document.querySelectorAll('#params button').forEach(b => b.classList.toggle('sel', b.dataset.k === cur.k));
-    $('reload').style.display = ALIGN.cameraFov !== window.MINDAR_FOVY ? '' : 'none';
-    window.overlay && window.overlay.apply();
-  };
-  PARAMS.forEach(p => { const b = document.createElement('button'); b.textContent = p.label; b.dataset.k = p.k; b.onclick = () => { cur = p; render(); }; $('params').appendChild(b); });
-  $('minus').onclick = () => { ALIGN[cur.k] -= cur.step; save(); render(); };
-  $('plus').onclick = () => { ALIGN[cur.k] += cur.step; save(); render(); };
-  $('reset').onclick = () => { Object.assign(ALIGN, ALIGN_DEFAULT); save(); render(); };
-  $('reload').onclick = () => { save(); location.reload(); };
-  $('copy').onclick = async () => { const t = 'ALIGN ' + JSON.stringify(ALIGN); $('copyBox').value = t; $('copyBox').style.display = 'block'; try { await navigator.clipboard.writeText(t); } catch (e) { $('copyBox').select(); } };
-  $('hint').style.bottom = '190px';
-  render();
-}
 </script>
 </body>
 </html>
