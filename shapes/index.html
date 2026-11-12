@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <title>From the Other Room</title>
+
+  <link rel="stylesheet" href="./style.css" />
+
+  <script>
+    // read by the bundled (patched) MindAR: phone camera field of view, and a sharper camera stream
+    window.MINDAR_FOVY = 63;
+  </script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./lib/three.module.js",
+        "three/addons/": "./lib/addons/",
+        "mindar-image-three": "./lib/mindar-image-three.prod.js"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="ar-stage"></div>
+
+  <div id="controls">
+    <div class="buttons">
+      <button id="start">Start camera</button>
+    </div>
+
+    <p id="status" role="status">
+      Start the camera, then point it at the open book.
+    </p>
+  </div>
+
+  <script type="module" src="./sketch.js"></script>
+</body>
+</html>
