@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face { font-family: "Caption"; src: url(telugu.woff2) format("woff2"); unicode-range: U+0C00-0C7F, U+200C-200D, U+25CC; }
+@font-face { font-family: "Caption"; src: url(latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F; }
+html,body{margin:0;background:transparent}
+/* 20 px per mm: 54 x 66 mm */
+.p{width:1080px;height:1320px;box-sizing:border-box;padding:80px 80px 0;background:#f6f3ec;position:relative;overflow:hidden}
+.p::after{content:"";position:absolute;inset:0;background:radial-gradient(120% 90% at 30% 20%,rgba(255,255,255,.35),rgba(0,0,0,.05));pointer-events:none}
+.ph{width:920px;height:920px;background-size:cover;background-position:center;box-shadow:inset 0 0 0 2px rgba(0,0,0,.18),inset 0 0 40px rgba(0,0,0,.18)}
+.cap{height:320px;display:flex;align-items:center;justify-content:center;text-align:center;font-family:"Caption";color:#26231f;line-height:1.28;padding:0 10px}
+</style></head><body>
+<div class="p" id="p"><div class="ph" id="ph"></div><div class="cap" id="cap"></div></div>
+<script>
+const q=new URLSearchParams(location.search);
+document.getElementById('ph').style.backgroundImage=`url(${q.get('img')})`;
+document.getElementById('cap').textContent=q.get('text');
+document.getElementById('cap').style.fontSize=q.get('size')+'px';
+</script></body></html>

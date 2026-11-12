@@ -1,0 +1,33 @@
+const { chromium } = require('playwright'); const http = require('http'); const fs = require('fs'); const path = require('path');
+const [root, video, truthFile, shot, query] = process.argv.slice(2);
+const types = { '.js': 'text/javascript', '.html': 'text/html', '.mind': 'application/octet-stream', '.jpg': 'image/jpeg' };
+const srv = http.createServer((q, r) => { let u = decodeURIComponent(q.url.split('?')[0]);
+  fs.readFile(path.join(root, u), (e, d) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'Content-Type': types[path.extname(u)] || 'application/octet-stream' }); r.end(d); }); }).listen(8771);
+(async () => {
+  const b = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${video}`, '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const ctx = await b.newContext({ viewport: { width: 360, height: 640 }, deviceScaleFactor: Number(process.env.DPR || 2), permissions: ['camera'] });
+  const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(String(e))); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+  const base = process.env.LIVE || 'http://localhost:8771/';
+  await p.goto(base + 'polaroids.html' + (query || ''));
+  const hint0 = await p.waitForFunction(() => !document.getElementById('hint').classList.contains('hide') && document.getElementById('hint').textContent, null, { timeout: 30000 }).then(h => h.jsonValue());
+  console.log('before tracking, hint:', hint0, '| buttons visible:', await p.evaluate(() => [...document.querySelectorAll('button')].filter(b => b.offsetParent).length));
+  const t0 = Date.now();
+  await p.waitForFunction(() => document.getElementById('hint').classList.contains('hide'), null, { timeout: 90000 });
+  console.log('found after', ((Date.now() - t0) / 1000).toFixed(1), 's');
+  await p.waitForTimeout(400); await p.screenshot({ path: shot.replace('.png', '-fade.png') });
+  await p.waitForTimeout(1800);
+  const r = await p.evaluate(() => {
+    const T = AFRAME.THREE, cam = document.querySelector('a-scene').camera, o = window.overlay;
+    const v = document.querySelector('video'), cs = v.getBoundingClientRect(), sc = document.querySelector('a-scene').getBoundingClientRect();
+    const toVid = w => { const n = w.clone().project(cam); const px = (n.x + 1) / 2 * sc.width, py = (1 - n.y) / 2 * sc.height;
+      return [(px - (cs.left - sc.left)) * v.videoWidth / cs.width, (py - (cs.top - sc.top)) * v.videoHeight / cs.height]; };
+    o.el.object3D.updateMatrixWorld(true);
+    const c = m => toVid(m.localToWorld(new T.Vector3(0, 0, 0)));
+    return { left: c(o.india), right: c(o.america), fold: toVid(o.book.localToWorld(new T.Vector3(0, 0, 0))), opacity: o.mats.map(m => +m.opacity.toFixed(2)) };
+  });
+  const tr = JSON.parse(fs.readFileSync(truthFile)).frames[0], d = (a, c) => Math.hypot(a[0] - c[0], a[1] - c[1]).toFixed(1);
+  console.log('error px  left photo', d(r.left, tr.left), '| right photo', d(r.right, tr.right), '| fold', d(r.fold, tr.fold), '| opacities', r.opacity.join(','));
+  await p.screenshot({ path: shot });
+  console.log('page errors:', errs.length ? errs.slice(0, 4) : 'none');
+  await b.close(); srv.close();
+})().catch(e => { console.error(e); process.exit(1); });
