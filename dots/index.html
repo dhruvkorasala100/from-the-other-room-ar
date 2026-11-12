@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#f6f3ec" />
+  <title>From the Other Room</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;1,8..60,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+
+  <link rel="preload" as="image" href="./images/bicycle.jpg" />
+  <link rel="preload" as="image" href="./images/walking.jpg" />
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../shapes/lib/three.module.js",
+        "three/addons/": "../shapes/lib/addons/",
+        "mindar-image-three": "../shapes/lib/mindar-image-three.prod.js"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <!-- start page -->
+  <main id="intro">
+    <header class="top">
+      <span class="mark">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 9.5V20h13V9.5M10 20v-5.5h4V20" /></svg>
+        From the Other Room
+      </span>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">A pop-up book about two homes</p>
+      <h1>Open the book. <em>Find the blue dots.</em></h1>
+      <p class="lede">Point your phone at the open pages, then tap a glowing dot to open a memory.</p>
+
+      <button id="start" class="primary" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" /><path d="m12 7.5 4 2.25v4.5L12 16.5l-4-2.25v-4.5z M8 9.75l4 2.25 4-2.25M12 12v4.5" /></svg>
+        View in AR
+      </button>
+      <p id="message" class="message" role="status" hidden></p>
+    </section>
+
+    <footer class="foot">Parsons MFA Design &amp; Technology · Thesis prototype</footer>
+  </main>
+
+  <!-- camera view -->
+  <div id="ar" hidden>
+    <div id="stage"></div>
+    <canvas id="debug" hidden></canvas>
+
+    <button class="hotspot" id="spot-page" type="button" aria-label="Open the photo on the page"><span></span></button>
+    <button class="hotspot" id="spot-wall" type="button" aria-label="Open the photo on the wall"><span></span></button>
+
+    <button id="exit" type="button" aria-label="Leave the camera view">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" /></svg>
+    </button>
+    <p id="hint" class="hint">Point at the open book</p>
+
+    <div id="popup" class="popup" hidden>
+      <figure role="dialog" aria-modal="true" aria-label="Memory">
+        <img id="photo" alt="" />
+        <button id="close" type="button" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+      </figure>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
