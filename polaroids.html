@@ -155,6 +155,26 @@ AFRAME.registerComponent('polaroids', {
 
 $('scene').addEventListener('arError', () => { $('hint').textContent = 'Camera unavailable. Allow camera access and reload.'; $('hint').classList.remove('hide'); });
 
+/* ---------- shown only if something goes wrong, so a screenshot says what failed ---------- */
+(() => {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:12px;right:12px;top:max(12px,env(safe-area-inset-top));z-index:20;background:rgba(150,20,20,.92);color:#fff;font:12px/1.4 ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:8px;display:none;white-space:pre-wrap;word-break:break-word';
+  document.body.appendChild(box);
+  const lines = [];
+  const show = m => { lines.push(m); box.textContent = lines.slice(-6).join('\n') + '\n' + navigator.userAgent.replace(/\(.*?\)/, m2 => m2.slice(0, 60)); box.style.display = 'block'; };
+  addEventListener('error', e => show('Error: ' + (e.message || e) + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : '')));
+  addEventListener('unhandledrejection', e => show('Promise: ' + (e.reason && (e.reason.name + ' ' + e.reason.message) || e.reason)));
+  if (!window.isSecureContext) show('Not a secure (https) page');
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) show('This browser view has no camera access. Open the link in Safari itself.');
+  $('scene').addEventListener('arError', e => show('arError: ' + JSON.stringify(e.detail || {})));
+  setTimeout(() => {
+    const v = document.querySelector('video');
+    if (!v) show('Camera never started (no video element after 10 s)');
+    else if (!v.videoWidth || v.paused) show(`Camera stream not playing: ${v.videoWidth}x${v.videoHeight}, paused=${v.paused}, readyState=${v.readyState}`);
+    const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) show('WebGL is unavailable');
+  }, 10000);
+})();
+
 /* ---------- hidden alignment panel: open the page with ?adjust ---------- */
 if (ADJUST) {
   $('panel').classList.add('on');
