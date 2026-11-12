@@ -13,10 +13,11 @@ Sequence: scan (artwork → card → walls → roof) → the whole house turns r
 The artwork (IMG_6944) is printed rotated 180° so the red circle sits just in front of the card. The phone tracks the visible front strip (page x 8–208 mm, y 118–268 mm).
 
 ## Polaroid prototype (`polaroids.html`)
-Point the phone at the open pop-up book: a Polaroid floats upright above each red page, turned toward the phone.
+Point the phone at the open pop-up book: a Polaroid floats above each red page and always faces the phone
+(upright when seen from the side, tilted back when seen from above, caption toward the front of the book).
 Left page: India, "నా చెయ్యి పట్టుకుని నాతో నడిచారు." Right page: America, "I was still finding my balance."
-No printed target: each painted page is its own tracking image (`polaroids/pages/left.jpg`, `right.jpg`,
-compiled into `targets/pages-v1.mind`). Captions are pre-rendered into the Polaroid images (Noto Sans Telugu / Noto Sans).
+No printed target: each painted page is its own tracking image, learned from a straight-down photo and an angled photo
+(`polaroids/pages/*-top.jpg`, `*-angled.jpg`, compiled into `targets/pages-v3.mind`; one Polaroid per page either way). Captions are pre-rendered into the Polaroid images (Noto Sans Telugu / Noto Sans).
 The bundled MindAR is patched to request a 1280×720 camera stream (Safari defaults to 640×480).
 
 ## Other pages

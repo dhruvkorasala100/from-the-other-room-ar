@@ -8,7 +8,8 @@
 <script src="./lib/aframe-v1.5.0.min.js"></script>
 <script src="./lib/mindar-image-aframe.prod.js"></script>
 <script>
-/* Each red page of the book is its own tracking image (polaroids/pages/left.jpg, right.jpg).
+/* Each red page of the book is a tracking image, learned from two photos (straight down and angled):
+   targets 0/1 = left/right from above, 2/3 = left/right from an angle (polaroids/pages/*.jpg).
    Sizes in mm. A page is 95.25 wide x 104.8 deep. */
 const PAGE_W = 95.25;
 const PHOTO = { w: 54, h: 66, hover: 8 };   // Polaroid size; its bottom edge floats this far above the page
@@ -28,43 +29,55 @@ const FADE = 0.8;                           // seconds to appear
 <div id="hint">Point your phone at the open book</div>
 
 <a-scene id="scene"
-  mindar-image="imageTargetSrc: ./targets/pages-v1.mind; maxTrack: 2; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 8; warmupTolerance: 3; uiScanning: no; uiLoading: yes; uiError: yes"
+  mindar-image="imageTargetSrc: ./targets/pages-v3.mind; maxTrack: 4; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 8; warmupTolerance: 3; uiScanning: no; uiLoading: yes; uiError: yes"
   color-space="sRGB" renderer="colorManagement: true; antialias: true; alpha: true"
   vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
   <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: none"></a-camera>
-  <a-entity mindar-image-target="targetIndex: 0"><a-entity polaroid="src: ./polaroids/polaroid-india.jpg"></a-entity></a-entity>
-  <a-entity mindar-image-target="targetIndex: 1"><a-entity polaroid="src: ./polaroids/polaroid-america.jpg"></a-entity></a-entity>
+  <a-entity mindar-image-target="targetIndex: 0"><a-entity polaroid="side: left; rank: 0"></a-entity></a-entity>
+  <a-entity mindar-image-target="targetIndex: 1"><a-entity polaroid="side: right; rank: 0"></a-entity></a-entity>
+  <a-entity mindar-image-target="targetIndex: 2"><a-entity polaroid="side: left; rank: 1"></a-entity></a-entity>
+  <a-entity mindar-image-target="targetIndex: 3"><a-entity polaroid="side: right; rank: 1"></a-entity></a-entity>
 </a-scene>
 
 <script>
 const THREE = AFRAME.THREE;
 const $ = id => document.getElementById(id);
-const tracked = new Set();
-const updateHint = () => $('hint').classList.toggle('hide', tracked.size > 0);
+const PHOTOS = { left: './polaroids/polaroid-india.jpg', right: './polaroids/polaroid-america.jpg' };
+const tracked = { left: new Set(), right: new Set() };   // which ranks currently see each page
+const shownAt = { left: null, right: null };              // when each page's photo started appearing
+const updateHint = () => $('hint').classList.toggle('hide', tracked.left.size + tracked.right.size > 0);
 
 /* One Polaroid floating upright above the middle of its page, turned toward the phone. */
 AFRAME.registerComponent('polaroid', {
-  schema: { src: { type: 'string' } },
+  schema: { side: { type: 'string' }, rank: { type: 'int' } },
   init() {
-    const tex = new THREE.TextureLoader().load(this.data.src); tex.colorSpace = THREE.SRGBColorSpace;
+    const tex = new THREE.TextureLoader().load(PHOTOS[this.data.side]); tex.colorSpace = THREE.SRGBColorSpace;
     this.mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, side: THREE.DoubleSide });
     // page frame in mm: origin = page centre, Y up off the page, Z toward the viewer
     this.page = new THREE.Group(); this.page.scale.setScalar(1 / PAGE_W); this.page.rotation.x = Math.PI / 2;
     this.card = new THREE.Mesh(new THREE.PlaneGeometry(PHOTO.w, PHOTO.h), this.mat);
     this.card.position.set(0, PHOTO.hover + PHOTO.h / 2, 0);
     this.page.add(this.card); this.el.object3D.add(this.page);
-    this.shownAt = null; this.v = new THREE.Vector3();
-    const anchor = this.el.parentNode, id = this.data.src;
-    anchor.addEventListener('targetFound', () => { this.shownAt = performance.now(); tracked.add(id); updateHint(); });
-    anchor.addEventListener('targetLost', () => { this.shownAt = null; tracked.delete(id); updateHint(); });
+    this.v = new THREE.Vector3(); this.p = new THREE.Vector3(); this.dir = new THREE.Vector3(); this.up = new THREE.Vector3(); this.back = new THREE.Vector3();
+    const anchor = this.el.parentNode, { side, rank } = this.data, t = tracked[side];
+    anchor.addEventListener('targetFound', () => { if (!t.size) shownAt[side] = performance.now(); t.add(rank); updateHint(); });
+    anchor.addEventListener('targetLost', () => { t.delete(rank); if (!t.size) shownAt[side] = null; updateHint(); });
   },
   tick() {
-    const a = this.shownAt === null ? 0 : Math.min(1, (performance.now() - this.shownAt) / 1000 / FADE);
+    // one photo per page: if both photos of a page are recognised, the straight-down one (rank 0) wins
+    const { side, rank } = this.data, t = tracked[side];
+    const active = t.has(rank) && Math.min(...t) === rank;
+    const a = !active ? 0 : Math.min(1, (performance.now() - shownAt[side]) / 1000 / FADE);
     this.mat.opacity = a * a * (3 - 2 * a);
-    const cam = this.el.sceneEl.camera; if (!cam || this.shownAt === null) return;
-    this.page.updateWorldMatrix(true, false);
-    cam.getWorldPosition(this.v); this.page.worldToLocal(this.v);
-    this.card.rotation.y = Math.atan2(this.v.x, this.v.z);   // face the phone, staying upright
+    const cam = this.el.sceneEl.camera; if (!cam || !active) return;
+    // face the phone fully; keep the caption toward the front of the book (upright from the side, tilted back from above)
+    this.page.updateWorldMatrix(true, true);
+    cam.getWorldPosition(this.v); this.card.getWorldPosition(this.p);
+    this.up.set(0, 1, 0).transformDirection(this.page.matrixWorld);
+    this.back.set(0, 0, -1).transformDirection(this.page.matrixWorld);
+    const d = Math.abs(this.dir.subVectors(this.v, this.p).normalize().dot(this.up));
+    this.card.up.copy(this.up).multiplyScalar(1 - d).addScaledVector(this.back, d).normalize();
+    this.card.lookAt(this.v);
   }
 });
 
