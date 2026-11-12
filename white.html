@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>From the Other Room · White room</title>
+<script>window.MINDAR_FOVY = 63;   // phone camera field of view (long side), read by the bundled MindAR</script>
+<script src="./lib/aframe-v1.5.0.min.js"></script>
+<script src="./lib/mindar-image-aframe.prod.js"></script>
+<script>
+/* Timing in seconds after the book is first recognised. */
+const TIME = { whiteIn: 1.5, redStart: 2.5, redFor: 8 };
+/* Book geometry in mm (Sabuda card): spread 190.5 x 104.8; house front corner on the fold 31.7 behind the front edge. */
+const BOOK = { w: 190.5, d: 104.8, pageW: 95.25 };
+const HOUSE = { corner: 31.7, long: 50.8, gable: 38.1, eave: 38.1, ridge: 50.8, roofLen: 57.1, roofSlope: 34.9, pitch: 33.7 };
+</script>
+<style>
+  html { background: #fff; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-user-select: none; user-select: none; }
+  a-scene { position: fixed; inset: 0; }
+  .a-enter-vr, .a-enter-ar, .a-orientation-modal { display: none !important; }
+  #hint { position: fixed; left: 50%; bottom: max(28px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 5; background: rgba(14,14,16,.72); color: #fff; padding: 9px 16px; border-radius: 99px; font-size: 14px; white-space: nowrap; transition: opacity .5s; pointer-events: none; }
+  #hint.hide { opacity: 0; }
+</style>
+</head>
+<body>
+<div id="hint">Point your phone at the open book</div>
+
+<a-scene id="scene"
+  mindar-image="imageTargetSrc: ./targets/pages-v3.mind; maxTrack: 4; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 8; warmupTolerance: 3; uiScanning: no; uiLoading: yes; uiError: yes"
+  color-space="sRGB" renderer="colorManagement: true; antialias: true; alpha: true"
+  vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false" white-room>
+  <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: none"></a-camera>
+  <!-- the red pages are the tracking images: 0/1 = left/right learned from above, 2/3 = from an angle -->
+  <a-entity mindar-image-target="targetIndex: 0"><a-entity book-mask="side: left; rank: 0"></a-entity></a-entity>
+  <a-entity mindar-image-target="targetIndex: 1"><a-entity book-mask="side: right; rank: 1"></a-entity></a-entity>
+  <a-entity mindar-image-target="targetIndex: 2"><a-entity book-mask="side: left; rank: 2"></a-entity></a-entity>
+  <a-entity mindar-image-target="targetIndex: 3"><a-entity book-mask="side: right; rank: 3"></a-entity></a-entity>
+</a-scene>
+
+<script>
+const THREE = AFRAME.THREE;
+const $ = id => document.getElementById(id);
+const deg = d => d * Math.PI / 180;
+const MASK_LAYER = 1;
+const tracked = new Set();          // ranks of the page images currently recognised
+let firstSeen = null;               // when the book was first recognised
+let lostAt = null, pausedFor = 0;   // pause the sequence while the book is out of view
+
+function shapeFrom(pts) { const s = new THREE.Shape(); pts.forEach((p, i) => i ? s.lineTo(p[0], p[1]) : s.moveTo(p[0], p[1])); s.closePath(); return s; }
+function roofShape() {
+  const L = HOUSE.roofLen, S = HOUSE.roofSlope, h = L / 2, s = new THREE.Shape();
+  s.moveTo(-h, 0); s.lineTo(h, 0); s.bezierCurveTo(h, 0, h + 3.4, -S, 13.55, -S);
+  s.lineTo(-12.55, -S); s.bezierCurveTo(-h - 3.6, -S, -h, 0, -h, 0); return s;
+}
+
+/* Under each page image: the whole book as an invisible mask (house = red channel, area around the pages = green). */
+AFRAME.registerComponent('book-mask', {
+  schema: { side: { type: 'string' }, rank: { type: 'int' } },
+  init() {
+    // channels add up, so the house (red) never erases the page zone (green) behind it
+    const houseMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide, blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation });
+    const zoneMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation });
+    const page = new THREE.Group(); page.scale.setScalar(1 / BOOK.pageW); page.rotation.x = Math.PI / 2;   // mm; Y up; Z toward viewer
+    const book = new THREE.Group();   // origin: fold on the front edge
+    book.position.set(this.data.side === 'left' ? BOOK.pageW / 2 : -BOOK.pageW / 2, 0, BOOK.d / 2);
+    page.add(book);
+    // generous zone around the spread: the real red pages inside it are kept (also when the card is folded a bit)
+    const zone = new THREE.Mesh(new THREE.PlaneGeometry(BOOK.w * 1.45, BOOK.d * 1.7), zoneMat);
+    zone.rotation.x = -Math.PI / 2; zone.position.set(0, 0, -BOOK.d / 2); zone.renderOrder = 0; book.add(zone);
+    // the house, slightly enlarged so its paper edges are inside the mask
+    const house = new THREE.Group(); house.position.set(0, 0, -HOUSE.corner); house.rotation.y = Math.PI / 4; house.scale.setScalar(1.1);
+    const add = (geo, pos, ry) => { const m = new THREE.Mesh(geo, houseMat); m.position.set(...pos); m.rotation.y = ry || 0; m.renderOrder = 1; house.add(m); };
+    const H = HOUSE;
+    add(new THREE.ShapeGeometry(shapeFrom([[0, 0], [H.long, 0], [H.long, H.eave], [0, H.eave]])), [0, 0, 0]);
+    add(new THREE.ShapeGeometry(shapeFrom([[0, 0], [H.long, 0], [H.long, H.eave], [0, H.eave]])), [H.long, 0, -H.gable], Math.PI);
+    add(new THREE.ShapeGeometry(shapeFrom([[-H.gable, 0], [0, 0], [0, H.eave], [-H.gable / 2, H.ridge], [-H.gable, H.eave]])), [0, 0, 0], -Math.PI / 2);
+    add(new THREE.ShapeGeometry(shapeFrom([[0, 0], [H.gable, 0], [H.gable, H.eave], [H.gable / 2, H.ridge], [0, H.eave]])), [H.long, 0, 0], Math.PI / 2);
+    const rGeo = new THREE.ShapeGeometry(roofShape(), 24);
+    const ridge = new THREE.Group(); ridge.position.set(H.long / 2, H.ridge, -H.gable / 2); house.add(ridge);
+    const rA = new THREE.Mesh(rGeo, houseMat); rA.rotation.x = deg(H.pitch) - Math.PI / 2; ridge.add(rA);
+    const flip = new THREE.Group(); flip.rotation.y = Math.PI; ridge.add(flip);
+    const rB = new THREE.Mesh(rGeo, houseMat); rB.rotation.x = deg(H.pitch) - Math.PI / 2; flip.add(rB);
+    book.add(house);
+    page.traverse(o => o.layers.set(MASK_LAYER));
+    this.el.object3D.add(page); this.page = page;
+    const anchor = this.el.parentNode, r = this.data.rank;
+    anchor.addEventListener('targetFound', () => {
+      tracked.add(r); $('hint').classList.add('hide');
+      const now = performance.now() / 1000;
+      if (firstSeen === null) firstSeen = now;
+      if (lostAt !== null) { pausedFor += now - lostAt; lostAt = null; }
+    });
+    anchor.addEventListener('targetLost', () => {
+      tracked.delete(r);
+      if (!tracked.size) { lostAt = performance.now() / 1000; $('hint').classList.remove('hide'); }
+    });
+  },
+  tick() {   // only one page image drives the mask at a time: the lowest rank that is recognised
+    this.page.visible = tracked.has(this.data.rank) && Math.min(...tracked) === this.data.rank;
+  }
+});
+
+/* Draws the whole view: live camera, everything but the book whitened, the house slowly turning red. */
+const COMPOSITE_FRAG = `
+precision highp float;
+uniform sampler2D uVideo, uMask;
+uniform vec2 uRes;
+uniform vec4 uVid;          // camera image rectangle on the canvas: x, y-from-top, width, height (pixels)
+uniform float uWhite, uRed, uHave, uDebug;
+float redness(vec3 c){ float m = max(c.g, c.b); return (c.r - m) / (c.r + .05); }
+vec3 cam(vec2 fc){
+  vec2 uv = vec2((fc.x - uVid.x) / uVid.z, 1. - ((uRes.y - fc.y) - uVid.y) / uVid.w);
+  return texture2D(uVideo, uv).rgb;
+}
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  vec3 c = cam(fc);
+  if (uHave < .5) { gl_FragColor = vec4(c, 1.); return; }
+  // mask, softened over a few pixels
+  vec2 m = vec2(0.); float px = 2.5;
+  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) m += texture2D(uMask, (fc + vec2(i, j) * px) / uRes).rg;
+  m /= 9.;
+  // pages: red paint (with its black crackle) inside the zone around the book
+  float rd = 0.;
+  for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) rd += redness(cam(fc + vec2(i, j) * 3.));
+  rd /= 25.;
+  float l0 = dot(c, vec3(.299, .587, .114));
+  // house: its outline from the tracked pages (shaded walls look as red as the pages, so colour can't separate them);
+  // only near-black pixels, like the black backing, are left out
+  float house = smoothstep(.15, .6, m.r) * smoothstep(.06, .13, l0);
+  float pages = smoothstep(.1, .5, m.g) * smoothstep(.31, .45, rd) * (1. - house);
+  float keep = max(house, pages);
+  if (uDebug > .5) { gl_FragColor = vec4(mix(c, vec3(1., 0., 0.), .45 * m.r) + vec3(0., .25 * m.g, 0.), 1.); return; }
+  // the house turns red, keeping the paper's folds and shadows
+  // multiply toward red: white paper becomes red with its folds and shadows; red page caught in the outline barely changes
+  vec3 houseC = mix(c, c * vec3(1.06, .17, .19), uRed);
+  vec3 kept = mix(c, houseC, house);
+  vec3 outC = mix(c, mix(vec3(1.), kept, keep), uWhite);
+  gl_FragColor = vec4(outC, 1.);
+}`;
+
+AFRAME.registerComponent('white-room', {
+  init() {
+    this.rt = null; this.videoTex = null;
+    this.U = { uVideo: { value: null }, uMask: { value: null }, uRes: { value: new THREE.Vector2() }, uVid: { value: new THREE.Vector4() }, uWhite: { value: 0 }, uRed: { value: 0 }, uHave: { value: 0 }, uDebug: { value: new URLSearchParams(location.search).has('debug') ? 1 : 0 } };
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+      uniforms: this.U, depthTest: false, depthWrite: false,
+      vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0., 1.); }', fragmentShader: COMPOSITE_FRAG
+    }));
+    quad.frustumCulled = false; quad.renderOrder = 999; quad.visible = false;
+    this.el.object3D.add(quad); this.quad = quad;
+    this.el.addEventListener('arReady', () => {
+      const v = document.querySelector('video'); if (!v) return;
+      this.video = v; this.videoTex = new THREE.VideoTexture(v); this.videoTex.colorSpace = THREE.SRGBColorSpace;
+      this.U.uVideo.value = this.videoTex; quad.visible = true;
+    });
+  },
+  tick(time, delta) {
+    const r = this.el.renderer, cam = this.el.camera, canvas = this.el.canvas;
+    if (!r || !cam || !this.video || !canvas) return;
+    const W = canvas.width, H = canvas.height;
+    if (!this.rt || this.rt.width !== (W >> 1) || this.rt.height !== (H >> 1)) {
+      if (this.rt) this.rt.dispose();
+      this.rt = new THREE.WebGLRenderTarget(W >> 1, H >> 1); this.U.uMask.value = this.rt.texture;
+    }
+    // where the camera image sits on the canvas (MindAR sizes the video element to cover the screen)
+    const cr = canvas.getBoundingClientRect(), vr = this.video.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+    this.U.uRes.value.set(W, H);
+    this.U.uVid.value.set((vr.left - cr.left) * sx, (vr.top - cr.top) * sy, vr.width * sx, vr.height * sy);
+    // sequence
+    const now = performance.now() / 1000;
+    const t = firstSeen === null ? 0 : (lostAt !== null ? lostAt : now) - firstSeen - pausedFor;
+    const have = tracked.size > 0;
+    this.white = Math.max(0, Math.min(1, (this.white || 0) + (have ? 1 : -1) * Math.min(delta || 16, 100) / 1000 / TIME.whiteIn));
+    const ease = x => x * x * (3 - 2 * x);
+    this.U.uWhite.value = ease(this.white);
+    this.U.uRed.value = ease(Math.max(0, Math.min(1, (t - TIME.redStart) / TIME.redFor)));
+    this.U.uHave.value = this.white > 0 ? 1 : 0;
+    // render the invisible book mask for this frame
+    const old = r.getRenderTarget(), oldClear = r.getClearColor(new THREE.Color()), oldAlpha = r.getClearAlpha();
+    cam.layers.set(MASK_LAYER); this.quad.visible = false;
+    r.setRenderTarget(this.rt); r.setClearColor(0x000000, 0); r.clear(); r.render(this.el.object3D, cam);
+    r.setRenderTarget(old); r.setClearColor(oldClear, oldAlpha);
+    cam.layers.set(0); this.quad.visible = true;
+  }
+});
+
+$('scene').addEventListener('arError', () => { $('hint').textContent = 'Camera unavailable. Allow camera access and reload.'; $('hint').classList.remove('hide'); });
+</script>
+</body>
+</html>

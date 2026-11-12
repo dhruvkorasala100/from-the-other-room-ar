@@ -12,6 +12,12 @@ Sequence: scan (artwork → card → walls → roof) → the whole house turns r
 
 The artwork (IMG_6944) is printed rotated 180° so the red circle sits just in front of the card. The phone tracks the visible front strip (page x 8–208 mm, y 118–268 mm).
 
+## White room (`white.html`)
+Point the phone at the open pop-up book: everything except the book fades to white, then the house slowly turns red
+(a multiply tint over the live camera, so the paper's folds and shadows stay). Uses the same page tracking images as
+`polaroids.html`; the house's outline comes from the Sabuda geometry placed relative to the tracked page.
+Timings are in `TIME` at the top. `?debug` shows the computed house outline (red) and page zone (green).
+
 ## Polaroid prototype (`polaroids.html`)
 Point the phone at the open pop-up book: a Polaroid floats above each red page and always faces the phone
 (upright when seen from the side, tilted back when seen from above, caption toward the front of the book).
